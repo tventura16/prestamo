@@ -1,0 +1,222 @@
+_format_version: "3.0"
+_transform: true
+
+# ───────────────────────────────────────────────
+# Services y rutas
+# ───────────────────────────────────────────────
+services:
+
+  # ───── Auth Service (Keycloak) ─────
+  - name: auth-service
+    url: http://auth-service:8080
+    retries: 3
+    connect_timeout: 5000
+    read_timeout: 30000
+    write_timeout: 30000
+    routes:
+      - name: auth-route
+        paths:
+          - /auth
+        strip_path: false
+        preserve_host: true
+
+  # ───── Client Service ─────
+  - name: client-service
+    url: http://client-service:8081
+    retries: 3
+    connect_timeout: 5000
+    read_timeout: 30000
+    write_timeout: 30000
+    routes:
+      - name: clients-route
+        paths:
+          - /clients
+        strip_path: false
+        methods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+    plugins:
+      - name: jwt
+      - name: rate-limiting
+        config:
+          minute: 120
+          policy: local
+
+  # ───── Loan Service ─────
+  - name: loan-service
+    url: http://loan-service:8082
+    retries: 3
+    connect_timeout: 5000
+    read_timeout: 30000
+    write_timeout: 30000
+    routes:
+      - name: loans-route
+        paths:
+          - /loans
+        strip_path: false
+        methods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+    plugins:
+      - name: jwt
+      - name: rate-limiting
+        config:
+          minute: 120
+          policy: local
+
+  # ───── Payment Service ─────
+  - name: payment-service
+    url: http://payment-service:8083
+    retries: 3
+    connect_timeout: 5000
+    read_timeout: 30000
+    write_timeout: 30000
+    routes:
+      - name: payments-route
+        paths:
+          - /payments
+        strip_path: false
+        methods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+          - DELETE
+          - OPTIONS
+    plugins:
+      - name: jwt
+      - name: rate-limiting
+        config:
+          minute: 120
+          policy: local
+
+  # ───── Report Service ─────
+  - name: report-service
+    url: http://report-service:8084
+    retries: 3
+    connect_timeout: 5000
+    read_timeout: 60000
+    write_timeout: 60000
+    routes:
+      - name: reports-route
+        paths:
+          - /reports
+        strip_path: false
+        methods:
+          - GET
+          - POST
+          - OPTIONS
+    plugins:
+      - name: jwt
+      - name: rate-limiting
+        config:
+          minute: 60
+          policy: local
+
+  # ───── Document Service ─────
+  - name: document-service
+    url: http://document-service:8085
+    retries: 3
+    connect_timeout: 5000
+    read_timeout: 60000
+    write_timeout: 60000
+    routes:
+      - name: documents-route
+        paths:
+          - /documents
+        strip_path: false
+        methods:
+          - GET
+          - POST
+          - OPTIONS
+    plugins:
+      - name: jwt
+      - name: rate-limiting
+        config:
+          minute: 60
+          policy: local
+
+# ───────────────────────────────────────────────
+# Plugins globales
+# ───────────────────────────────────────────────
+plugins:
+
+  # CORS — permite al frontend Angular consumir el gateway
+  - name: cors
+    config:
+      origins:
+        - "*"
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+        - HEAD
+      headers:
+        - Accept
+        - Accept-Version
+        - Authorization
+        - Content-Length
+        - Content-MD5
+        - Content-Type
+        - Date
+        - X-Auth-Token
+        - X-Request-ID
+      exposed_headers:
+        - X-Auth-Token
+        - X-Request-ID
+      credentials: true
+      max_age: 3600
+
+  # Inyecta un Request ID en cada request para trazabilidad
+  - name: correlation-id
+    config:
+      header_name: X-Request-ID
+      generator: uuid
+      echo_downstream: true
+
+  # Logs estructurados a stdout (capturados por Docker)
+  - name: file-log
+    config:
+      path: /dev/stdout
+
+  # Headers de seguridad
+  - name: response-transformer
+    config:
+      add:
+        headers:
+          - "X-Content-Type-Options:nosniff"
+          - "X-Frame-Options:SAMEORIGIN"
+          - "Referrer-Policy:strict-origin-when-cross-origin"
+
+  # Métricas Prometheus expuestas en :8001/metrics
+  - name: prometheus
+    config:
+      status_code_metrics: true
+      latency_metrics: true
+      bandwidth_metrics: true
+      upstream_health_metrics: true
+
+# ───────────────────────────────────────────────
+# Consumers (placeholder — administrar por API admin)
+# ───────────────────────────────────────────────
+# Los consumers se crean dinámicamente desde el flujo OIDC con Keycloak.
+# Para validar JWTs emitidos por Keycloak, crear un consumer con la clave
+# pública del realm a través de la Admin API:
+#
+#   POST /consumers
+#     { "username": "keycloak-realm-prestamos" }
+#   POST /consumers/keycloak-realm-prestamos/jwt
+#     { "algorithm": "RS256",
+#       "key": "<iss del token, ej: http://auth-service:8080/realms/prestamos>",
+#       "rsa_public_key": "<PEM de la pubkey del realm>" }

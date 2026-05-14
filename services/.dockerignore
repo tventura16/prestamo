@@ -1,0 +1,15 @@
+**/.git
+**/.gitignore
+**/.env
+**/.env.*
+**/.vscode
+**/.idea
+**/*.md
+**/Dockerfile
+**/.dockerignore
+**/bin
+**/dist
+**/tmp
+**/coverage
+**/*.test
+**/*.out

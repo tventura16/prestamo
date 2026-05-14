@@ -1,0 +1,15 @@
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">$</span>
+    <h1>{{ title() }}</h1>
+  </div>
+  <nav>
+    <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">Dashboard</a>
+    <a routerLink="/clientes" routerLinkActive="active">Clientes</a>
+    <a routerLink="/prestamos" routerLinkActive="active">Préstamos</a>
+  </nav>
+</header>
+
+<main class="content">
+  <router-outlet />
+</main>

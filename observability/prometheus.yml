@@ -1,0 +1,128 @@
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: prestamos
+    environment: production
+
+# ───────────────────────────────────────────────
+# Alerting (placeholder — configurar Alertmanager si se requiere)
+# ───────────────────────────────────────────────
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ["alertmanager:9093"]
+
+# rule_files:
+#   - "rules/*.yml"
+
+# ───────────────────────────────────────────────
+# Scrape configs
+# ───────────────────────────────────────────────
+scrape_configs:
+
+  # ───── Prometheus self-monitoring ─────
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # ───── Microservicios Go (exponen /metrics con la lib oficial) ─────
+  - job_name: client-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["client-service:8081"]
+        labels:
+          service: client-service
+          tier: backend
+
+  - job_name: loan-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["loan-service:8082"]
+        labels:
+          service: loan-service
+          tier: backend
+
+  - job_name: payment-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["payment-service:8083"]
+        labels:
+          service: payment-service
+          tier: backend
+
+  - job_name: report-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["report-service:8084"]
+        labels:
+          service: report-service
+          tier: backend
+
+  - job_name: document-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["document-service:8085"]
+        labels:
+          service: document-service
+          tier: backend
+
+  # ───── API Gateway (Kong) ─────
+  # Requiere el plugin "prometheus" habilitado en kong.yml
+  - job_name: kong
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api-gateway:8001"]
+        labels:
+          service: kong
+          tier: gateway
+
+  # ───── Keycloak ─────
+  # Disponible si KC_METRICS_ENABLED=true en auth-service
+  - job_name: keycloak
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["auth-service:8080"]
+        labels:
+          service: keycloak
+          tier: auth
+
+  # ───── RabbitMQ (plugin rabbitmq_prometheus, ya incluido en :management) ─────
+  - job_name: rabbitmq
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+        labels:
+          service: rabbitmq
+          tier: messaging
+
+  # ───── PostgreSQL (requiere postgres_exporter como contenedor aparte) ─────
+  # - job_name: postgres
+  #   static_configs:
+  #     - targets: ["postgres-exporter:9187"]
+  #       labels:
+  #         service: postgres
+  #         tier: database
+
+  # ───── Redis (requiere redis_exporter como contenedor aparte) ─────
+  # - job_name: redis
+  #   static_configs:
+  #     - targets: ["redis-exporter:9121"]
+  #       labels:
+  #         service: redis
+  #         tier: cache
+
+  # ───── Kafka (requiere JMX exporter o Kafka exporter) ─────
+  # - job_name: kafka
+  #   static_configs:
+  #     - targets: ["kafka-exporter:9308"]
+  #       labels:
+  #         service: kafka
+  #         tier: messaging
+
+  # ───── Node exporter (métricas del host, si se agrega) ─────
+  # - job_name: node
+  #   static_configs:
+  #     - targets: ["node-exporter:9100"]
+  #       labels:
+  #         tier: infrastructure
