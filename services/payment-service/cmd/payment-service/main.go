@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hashicorp/consul/api"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/prestamos/payment-service/internal/auth"
 	"github.com/prestamos/payment-service/internal/config"
 	"github.com/prestamos/payment-service/internal/db"
 	"github.com/prestamos/payment-service/internal/handler"
@@ -31,6 +33,39 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Register with Consul
+	if consulAddr := os.Getenv("CONSUL_ADDR"); consulAddr != "" {
+		consulCfg := api.DefaultConfig()
+		consulCfg.Address = consulAddr
+		consulClient, err := api.NewClient(consulCfg)
+		if err != nil {
+			logger.Error("cannot create consul client", "err", err)
+		} else {
+			servicePort := 8083
+			reg := &api.AgentServiceRegistration{
+				ID:      cfg.ServiceName + "-1",
+				Name:    cfg.ServiceName,
+				Port:    servicePort,
+				Address: os.Getenv("SERVICE_HOST"),
+				Check: &api.AgentServiceCheck{
+					HTTP:     "http://" + os.Getenv("SERVICE_HOST") + ":" + os.Getenv("SERVICE_PORT") + "/health",
+					Interval: "10s",
+					Timeout:  "5s",
+				},
+			}
+			if err := consulClient.Agent().ServiceRegister(reg); err != nil {
+				logger.Error("cannot register with consul", "err", err)
+			} else {
+				logger.Info("registered with consul", "service", cfg.ServiceName)
+				defer func() {
+					if err := consulClient.Agent().ServiceDeregister(cfg.ServiceName + "-1"); err != nil {
+						logger.Error("cannot deregister from consul", "err", err)
+					}
+				}()
+			}
+		}
+	}
+
 	pagosPool, err := db.NewPool(ctx, cfg.DSN(cfg.DBNamePagos))
 	if err != nil {
 		logger.Error("cannot connect to pagos db", "err", err)
@@ -46,6 +81,18 @@ func main() {
 	}
 	defer prestamosPool.Close()
 	logger.Info("connected to prestamos db", "db", cfg.DBNamePrestamos)
+
+	var verifier *auth.Verifier
+	if cfg.AuthEnabled {
+		verifier, err = auth.NewVerifier(ctx, cfg.KeycloakInternalURL, cfg.KeycloakPublicURL, cfg.KeycloakRealm, cfg.KeycloakClientID)
+		if err != nil {
+			logger.Error("cannot initialize auth", "err", err)
+			os.Exit(1)
+		}
+		logger.Info("auth enabled", "realm", cfg.KeycloakRealm)
+	} else {
+		logger.Warn("AUTH DISABLED")
+	}
 
 	pagoRepo := repository.NewPagoRepository(pagosPool)
 	loanRepo := repository.NewLoanRepository(prestamosPool)
@@ -75,7 +122,11 @@ func main() {
 	})
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	pagoHandler.Register(r.Group("/payments"))
+	api := r.Group("")
+	if verifier != nil {
+		api.Use(verifier.Middleware())
+	}
+	pagoHandler.Register(api.Group("/payments"))
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.ServicePort,

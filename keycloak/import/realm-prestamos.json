@@ -1,0 +1,85 @@
+{
+  "realm": "prestamos",
+  "displayName": "Sistema de Prestamos",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "rememberMe": true,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 3600,
+  "ssoSessionIdleTimeout": 1800,
+
+  "roles": {
+    "realm": [
+      { "name": "admin",      "description": "Administrador del sistema" },
+      { "name": "supervisor", "description": "Supervisor: aprueba prestamos y revisa reportes" },
+      { "name": "cajero",     "description": "Cajero: registra clientes y pagos" }
+    ]
+  },
+
+  "users": [
+    {
+      "username":  "admin",
+      "enabled":   true,
+      "email":     "admin@prestamos.local",
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName":  "Sistema",
+      "credentials": [
+        { "type": "password", "value": "admin123", "temporary": false }
+      ],
+      "realmRoles": ["admin", "supervisor", "cajero"]
+    },
+    {
+      "username":  "supervisor1",
+      "enabled":   true,
+      "email":     "supervisor@prestamos.local",
+      "emailVerified": true,
+      "firstName": "Maria",
+      "lastName":  "Supervisora",
+      "credentials": [
+        { "type": "password", "value": "supervisor123", "temporary": false }
+      ],
+      "realmRoles": ["supervisor", "cajero"]
+    },
+    {
+      "username":  "cajero1",
+      "enabled":   true,
+      "email":     "cajero1@prestamos.local",
+      "emailVerified": true,
+      "firstName": "Pedro",
+      "lastName":  "Cajero",
+      "credentials": [
+        { "type": "password", "value": "cajero123", "temporary": false }
+      ],
+      "realmRoles": ["cajero"]
+    }
+  ],
+
+  "clients": [
+    {
+      "clientId":               "prestamos-frontend",
+      "name":                   "Prestamos Frontend",
+      "enabled":                true,
+      "publicClient":           true,
+      "standardFlowEnabled":    true,
+      "implicitFlowEnabled":    false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost/*",
+        "http://localhost:80/*"
+      ],
+      "webOrigins": [
+        "http://localhost",
+        "+"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris":   "http://localhost/*"
+      }
+    }
+  ]
+}

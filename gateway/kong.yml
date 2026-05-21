@@ -40,7 +40,7 @@ services:
           - DELETE
           - OPTIONS
     plugins:
-      - name: jwt
+      # - name: jwt   # desactivado hasta integrar Keycloak
       - name: rate-limiting
         config:
           minute: 120
@@ -66,7 +66,7 @@ services:
           - DELETE
           - OPTIONS
     plugins:
-      - name: jwt
+      # - name: jwt   # desactivado hasta integrar Keycloak
       - name: rate-limiting
         config:
           minute: 120
@@ -92,7 +92,7 @@ services:
           - DELETE
           - OPTIONS
     plugins:
-      - name: jwt
+      # - name: jwt   # desactivado hasta integrar Keycloak
       - name: rate-limiting
         config:
           minute: 120
@@ -115,7 +115,7 @@ services:
           - POST
           - OPTIONS
     plugins:
-      - name: jwt
+      # - name: jwt   # desactivado hasta integrar Keycloak
       - name: rate-limiting
         config:
           minute: 60
@@ -138,7 +138,7 @@ services:
           - POST
           - OPTIONS
     plugins:
-      - name: jwt
+      # - name: jwt   # desactivado hasta integrar Keycloak
       - name: rate-limiting
         config:
           minute: 60

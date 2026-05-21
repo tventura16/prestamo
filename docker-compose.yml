@@ -52,7 +52,7 @@ services:
     image: quay.io/keycloak/keycloak:26.0
     container_name: prestamos-keycloak
     restart: unless-stopped
-    command: start-dev
+    command: start-dev --import-realm
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
@@ -60,12 +60,17 @@ services:
       KC_DB_PASSWORD: ${DB_PASSWORD:-prestamos}
       KC_METRICS_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
+      KC_HTTP_ENABLED: "true"
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
     ports:
       - "8080:8080"
     volumes:
       - keycloakdata:/opt/keycloak/data
+      - ./keycloak/import:/opt/keycloak/data/import:ro
     networks:
       - backend-net
       - data-net
@@ -86,6 +91,8 @@ services:
     environment:
       SERVICE_NAME: client-service
       SERVICE_PORT: 8081
+      SERVICE_HOST: prestamos-client-service
+      CONSUL_ADDR: consul:8500
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: clientes
@@ -122,6 +129,8 @@ services:
     restart: unless-stopped
     environment:
       SERVICE_NAME: loan-service
+      SERVICE_HOST: prestamos-loan-service
+      CONSUL_ADDR: consul:8500
       SERVICE_PORT: 8082
       DB_HOST: postgres
       DB_PORT: 5432
@@ -157,6 +166,8 @@ services:
     restart: unless-stopped
     environment:
       SERVICE_NAME: payment-service
+      SERVICE_HOST: prestamos-payment-service
+      CONSUL_ADDR: consul:8500
       SERVICE_PORT: 8083
       DB_HOST: postgres
       DB_PORT: 5432
@@ -196,6 +207,8 @@ services:
     restart: unless-stopped
     environment:
       SERVICE_NAME: report-service
+      SERVICE_HOST: prestamos-report-service
+      CONSUL_ADDR: consul:8500
       SERVICE_PORT: 8084
       DB_HOST: postgres
       DB_PORT: 5432
@@ -231,10 +244,15 @@ services:
     restart: unless-stopped
     environment:
       SERVICE_NAME: document-service
+      SERVICE_HOST: prestamos-document-service
+      CONSUL_ADDR: consul:8500
       SERVICE_PORT: 8085
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: documentos
+      DB_NAME_CLIENTES: clientes
+      DB_NAME_PRESTAMOS: prestamos
+      DB_NAME_PAGOS: pagos
       DB_USER: ${DB_USER:-prestamos}
       DB_PASSWORD: ${DB_PASSWORD:-prestamos}
       KAFKA_BROKERS: kafka:9092

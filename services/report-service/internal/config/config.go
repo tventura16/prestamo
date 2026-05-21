@@ -19,20 +19,31 @@ type Config struct {
 	DBNamePagos     string
 	DBNamePrestamos string
 	DBNameClientes  string
+
+	KeycloakInternalURL string
+	KeycloakPublicURL   string
+	KeycloakRealm       string
+	KeycloakClientID    string
+	AuthEnabled         bool
 }
 
 func Load() Config {
 	return Config{
-		ServiceName:     getenv("SERVICE_NAME", "report-service"),
-		ServicePort:     getenv("SERVICE_PORT", "8084"),
-		LogLevel:        getenv("LOG_LEVEL", "info"),
-		DBHost:          getenv("DB_HOST", "postgres"),
-		DBPort:          getenv("DB_PORT", "5432"),
-		DBUser:          getenv("DB_USER", "prestamos"),
-		DBPassword:      getenv("DB_PASSWORD", "prestamos"),
-		DBNamePagos:     getenv("DB_NAME_PAGOS", "pagos"),
-		DBNamePrestamos: getenv("DB_NAME_PRESTAMOS", "prestamos"),
-		DBNameClientes:  getenv("DB_NAME_CLIENTES", "clientes"),
+		ServiceName:         getenv("SERVICE_NAME", "report-service"),
+		ServicePort:         getenv("SERVICE_PORT", "8084"),
+		LogLevel:            getenv("LOG_LEVEL", "info"),
+		DBHost:              getenv("DB_HOST", "postgres"),
+		DBPort:              getenv("DB_PORT", "5432"),
+		DBUser:              getenv("DB_USER", "prestamos"),
+		DBPassword:          getenv("DB_PASSWORD", "prestamos"),
+		DBNamePagos:         getenv("DB_NAME_PAGOS", "pagos"),
+		DBNamePrestamos:     getenv("DB_NAME_PRESTAMOS", "prestamos"),
+		DBNameClientes:      getenv("DB_NAME_CLIENTES", "clientes"),
+		KeycloakInternalURL: getenv("KEYCLOAK_INTERNAL_URL", "http://auth-service:8080"),
+		KeycloakPublicURL:   getenv("KEYCLOAK_PUBLIC_URL", "http://localhost:8080"),
+		KeycloakRealm:       getenv("KEYCLOAK_REALM", "prestamos"),
+		KeycloakClientID:    getenv("KEYCLOAK_CLIENT_ID", "prestamos-frontend"),
+		AuthEnabled:         getenv("AUTH_ENABLED", "true") == "true",
 	}
 }
 

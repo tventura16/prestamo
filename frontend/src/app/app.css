@@ -7,6 +7,7 @@
   background: #1a365d;
   color: white;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  gap: 24px;
 }
 
 .brand {
@@ -36,6 +37,8 @@ h1 {
 nav {
   display: flex;
   gap: 8px;
+  flex: 1;
+  justify-content: center;
 }
 
 nav a {
@@ -55,6 +58,49 @@ nav a:hover {
 nav a.active {
   background: #2c5282;
   color: white;
+}
+
+.user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.2;
+}
+
+.username {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.role {
+  font-size: 11px;
+  color: #cbd5e0;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1px 8px;
+  border-radius: 10px;
+  margin-top: 2px;
+}
+
+.logout {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.logout:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.5);
 }
 
 .content {

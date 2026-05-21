@@ -17,6 +17,16 @@ export const routes: Routes = [
       import('./pages/prestamos/prestamos').then((m) => m.Prestamos),
   },
   {
+    path: 'prestamos/:id',
+    loadComponent: () =>
+      import('./pages/prestamos/prestamo-detail').then((m) => m.PrestamoDetail),
+  },
+  {
+    path: 'pagos',
+    loadComponent: () =>
+      import('./pages/pagos/pagos').then((m) => m.Pagos),
+  },
+  {
     path: '**',
     redirectTo: '',
   },

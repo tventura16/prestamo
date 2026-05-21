@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hashicorp/consul/api"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/prestamos/client-service/internal/auth"
 	"github.com/prestamos/client-service/internal/config"
 	"github.com/prestamos/client-service/internal/db"
 	"github.com/prestamos/client-service/internal/handler"
@@ -30,6 +32,40 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Register with Consul
+	var consulClient *api.Client
+	if consulAddr := os.Getenv("CONSUL_ADDR"); consulAddr != "" {
+		consulCfg := api.DefaultConfig()
+		consulCfg.Address = consulAddr
+		var err error
+		consulClient, err = api.NewClient(consulCfg)
+		if err != nil {
+			logger.Error("cannot create consul client", "err", err)
+		} else {
+			reg := &api.AgentServiceRegistration{
+				ID:      cfg.ServiceName + "-1",
+				Name:    cfg.ServiceName,
+				Port:    8081,
+				Address: os.Getenv("SERVICE_HOST"),
+				Check: &api.AgentServiceCheck{
+					HTTP:     "http://" + os.Getenv("SERVICE_HOST") + ":8081/health",
+					Interval: "10s",
+					Timeout:  "5s",
+				},
+			}
+			if err := consulClient.Agent().ServiceRegister(reg); err != nil {
+				logger.Error("cannot register with consul", "err", err)
+			} else {
+				logger.Info("registered with consul", "service", cfg.ServiceName)
+				defer func() {
+					if err := consulClient.Agent().ServiceDeregister(cfg.ServiceName + "-1"); err != nil {
+						logger.Error("cannot deregister from consul", "err", err)
+					}
+				}()
+			}
+		}
+	}
+
 	pool, err := db.NewPool(ctx, cfg.PostgresDSN())
 	if err != nil {
 		logger.Error("cannot connect to database", "err", err)
@@ -37,6 +73,18 @@ func main() {
 	}
 	defer pool.Close()
 	logger.Info("connected to database", "db", cfg.DBName, "host", cfg.DBHost)
+
+	var verifier *auth.Verifier
+	if cfg.AuthEnabled {
+		verifier, err = auth.NewVerifier(ctx, cfg.KeycloakInternalURL, cfg.KeycloakPublicURL, cfg.KeycloakRealm, cfg.KeycloakClientID)
+		if err != nil {
+			logger.Error("cannot initialize auth", "err", err)
+			os.Exit(1)
+		}
+		logger.Info("auth enabled", "realm", cfg.KeycloakRealm, "issuer", cfg.KeycloakPublicURL+"/realms/"+cfg.KeycloakRealm)
+	} else {
+		logger.Warn("AUTH DISABLED — running without JWT validation")
+	}
 
 	repo := repository.NewClienteRepository(pool)
 	clienteHandler := handler.NewClienteHandler(repo)
@@ -46,6 +94,7 @@ func main() {
 	r.Use(gin.Recovery())
 	r.Use(requestLogger(logger))
 
+	// Públicos: healthchecks y métricas.
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": cfg.ServiceName})
 	})
@@ -60,7 +109,12 @@ func main() {
 	})
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
-	clienteHandler.Register(r.Group("/clients"))
+	// Protegidos: endpoints de negocio.
+	api := r.Group("")
+	if verifier != nil {
+		api.Use(verifier.Middleware())
+	}
+	clienteHandler.Register(api.Group("/clients"))
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.ServicePort,
