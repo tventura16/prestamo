@@ -46,7 +46,13 @@ export class PaymentService {
     return this.http.get<ListResult<Pago>>(this.base, { params });
   }
 
-  create(data: CreatePagoInput): Observable<{ pago: Pago; cuota: any; prestamo: any }> {
-    return this.http.post<{ pago: Pago; cuota: any; prestamo: any }>(this.base, data);
+  /**
+   * Registra un pago. `idempotencyKey` debe ser estable por intento de pago
+   * (no por reintento): así un reenvío del mismo pago — por timeout o doble
+   * click — no genera un doble cobro; el backend reproduce la respuesta original.
+   */
+  create(data: CreatePagoInput, idempotencyKey?: string): Observable<{ pago: Pago; cuota: any; prestamo: any }> {
+    const headers = idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined;
+    return this.http.post<{ pago: Pago; cuota: any; prestamo: any }>(this.base, data, { headers });
   }
 }

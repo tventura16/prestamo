@@ -266,6 +266,8 @@ export class PrestamoDetail implements OnInit {
   payForm: { monto_pagado: number | null; metodo_pago: MetodoPago; observaciones: string } = {
     monto_pagado: null, metodo_pago: 'efectivo', observaciones: '',
   };
+  // Clave de idempotencia del intento de pago en curso (estable entre reintentos).
+  private payKey: string | null = null;
 
   totalCapital = computed(() => this.cuotas().reduce((s, c) => s + c.capital, 0));
   totalInteres = computed(() => this.cuotas().reduce((s, c) => s + c.interes, 0));
@@ -353,6 +355,8 @@ export class PrestamoDetail implements OnInit {
   openPay(c: Cuota) {
     this.payCuota.set(c);
     this.payError.set(null);
+    // Una clave por intento de pago: reintentos reusan la misma → sin doble cobro.
+    this.payKey = crypto.randomUUID();
     this.payForm = {
       monto_pagado: c.saldo_pendiente + c.mora_acumulada,
       metodo_pago: 'efectivo',
@@ -371,7 +375,7 @@ export class PrestamoDetail implements OnInit {
       metodo_pago: this.payForm.metodo_pago,
       usuario_id: this.keycloak.userId(),
       observaciones: this.payForm.observaciones || undefined,
-    }).subscribe({
+    }, this.payKey ?? undefined).subscribe({
       next: () => {
         this.paying.set(false);
         this.payCuota.set(null);
