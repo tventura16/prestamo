@@ -36,9 +36,17 @@ func (h *PagoHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	res, err := h.svc.Register(ctxOf(c), in)
+	// Idempotency-Key opcional: reintentos con la misma clave no re-cobran.
+	idempotencyKey := c.GetHeader("Idempotency-Key")
+
+	res, replayed, err := h.svc.Register(ctxOf(c), in, idempotencyKey)
 	if err != nil {
 		respondError(c, err)
+		return
+	}
+	if replayed {
+		// Reproducción de un pago ya registrado: 200, no 201.
+		c.JSON(http.StatusOK, res)
 		return
 	}
 	c.JSON(http.StatusCreated, res)

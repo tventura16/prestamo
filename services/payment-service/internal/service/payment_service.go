@@ -2,11 +2,16 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"time"
 
+	"github.com/google/uuid"
+
+	"github.com/prestamos/payment-service/internal/events"
 	"github.com/prestamos/payment-service/internal/models"
 	"github.com/prestamos/payment-service/internal/repository"
 )
@@ -14,162 +19,235 @@ import (
 type PaymentService struct {
 	pagoRepo *repository.PagoRepository
 	loanRepo *repository.LoanRepository
+	logger   *slog.Logger
 }
 
-func NewPaymentService(pago *repository.PagoRepository, loan *repository.LoanRepository) *PaymentService {
-	return &PaymentService{pagoRepo: pago, loanRepo: loan}
+func NewPaymentService(pago *repository.PagoRepository, loan *repository.LoanRepository, logger *slog.Logger) *PaymentService {
+	return &PaymentService{pagoRepo: pago, loanRepo: loan, logger: logger}
 }
 
-// Register aplica un pago a una cuota.
-//
-// Política de distribución del monto recibido:
-//  1. Cubre mora_acumulada primero.
-//  2. Después cubre el interés pendiente de la cuota (hasta lo no pagado en
-//     pagos previos).
-//  3. El remanente va a capital.
-//
-// Si la suma deja saldo_pendiente == 0 y mora_acumulada == 0, la cuota pasa
-// a estado "pagada". Si todas las cuotas del préstamo quedan en cero, el
-// préstamo pasa a "finalizado".
-//
-// LIMITACIÓN: la transacción cubre el lock+actualización en DB prestamos.
-// La inserción del pago en DB pagos es una transacción aparte. Si esta
-// segunda falla tras commit de prestamos, queda inconsistencia operativa
-// (cuota actualizada sin recibo). En v2 esto se resuelve con outbox/eventos.
-func (s *PaymentService) Register(ctx context.Context, in models.CreatePagoInput) (models.PagoResult, error) {
-	// 1. Pagos previos para esta cuota (para distribuir correctamente).
-	interesYaPagado, capitalYaPagado, err := s.pagoRepo.PreviousPaidByCuota(ctx, in.CuotaID)
-	if err != nil {
-		return models.PagoResult{}, fmt.Errorf("previous paid: %w", err)
-	}
+// Distribucion es el resultado puro de repartir un monto recibido sobre una
+// cuota, en el orden mora → interés → capital.
+type Distribucion struct {
+	Mora        float64
+	Interes     float64
+	Capital     float64
+	NewSaldo    float64
+	NewMora     float64
+	Estado      string // "parcial" | "pagada"
+	MarcarFecha bool
+}
 
-	// 2. Transacción en DB prestamos: lock + cálculo + update cuota/préstamo.
-	tx, err := s.loanRepo.Pool().Begin(ctx)
-	if err != nil {
-		return models.PagoResult{}, fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
-	snap, err := s.loanRepo.LockCuotaWithPrestamo(ctx, tx, in.CuotaID)
-	if err != nil {
-		return models.PagoResult{}, err
-	}
-	if snap.Estado == "pagada" {
-		return models.PagoResult{}, repository.ErrCuotaPagada
-	}
-
+// distribuir calcula cómo se reparte `monto` sobre una cuota dado su snapshot
+// y lo ya pagado previamente. Función PURA (sin I/O) para poder testear la
+// lógica financiera de forma aislada. Devuelve ErrOverpayment si el monto
+// excede lo adeudado (saldo + mora).
+func distribuir(snap repository.CuotaSnapshot, interesYaPagado, capitalYaPagado, monto float64) (Distribucion, error) {
 	totalAdeudado := round2(snap.SaldoPendiente + snap.MoraAcumulada)
-	if in.MontoPagado > totalAdeudado+0.005 {
-		return models.PagoResult{}, fmt.Errorf("%w: adeudado=%.2f, recibido=%.2f",
-			repository.ErrOverpayment, totalAdeudado, in.MontoPagado)
+	if monto > totalAdeudado+0.005 {
+		return Distribucion{}, fmt.Errorf("%w: adeudado=%.2f, recibido=%.2f",
+			repository.ErrOverpayment, totalAdeudado, monto)
 	}
 
-	// 3. Distribución: mora → interés → capital.
-	restante := in.MontoPagado
+	restante := monto
 
-	moraPagada := math.Min(restante, snap.MoraAcumulada)
-	moraPagada = round2(moraPagada)
-	restante = round2(restante - moraPagada)
+	mora := round2(math.Min(restante, snap.MoraAcumulada))
+	restante = round2(restante - mora)
 
 	interesDebido := round2(snap.Interes - interesYaPagado)
 	if interesDebido < 0 {
 		interesDebido = 0
 	}
-	interesPagado := round2(math.Min(restante, interesDebido))
-	restante = round2(restante - interesPagado)
+	interes := round2(math.Min(restante, interesDebido))
+	restante = round2(restante - interes)
 
 	capitalDebido := round2(snap.Capital - capitalYaPagado)
 	if capitalDebido < 0 {
 		capitalDebido = 0
 	}
-	capitalPagado := round2(math.Min(restante, capitalDebido))
-	restante = round2(restante - capitalPagado)
+	capital := round2(math.Min(restante, capitalDebido))
+	restante = round2(restante - capital)
 
-	// Si por redondeo queda un centavo, atribuirlo a capital.
-	if restante > 0 && capitalPagado+restante <= capitalDebido+0.01 {
-		capitalPagado = round2(capitalPagado + restante)
+	// Un centavo residual por redondeo se atribuye a capital.
+	if restante > 0 && capital+restante <= capitalDebido+0.01 {
+		capital = round2(capital + restante)
 	}
 
-	// 4. Nuevo estado de la cuota.
-	newSaldo := round2(snap.SaldoPendiente - (interesPagado + capitalPagado))
+	newSaldo := round2(snap.SaldoPendiente - (interes + capital))
 	if newSaldo < 0 {
 		newSaldo = 0
 	}
-	newMora := round2(snap.MoraAcumulada - moraPagada)
+	newMora := round2(snap.MoraAcumulada - mora)
 	if newMora < 0 {
 		newMora = 0
 	}
 
-	estado := "parcial"
-	marcarFecha := false
+	d := Distribucion{
+		Mora: mora, Interes: interes, Capital: capital,
+		NewSaldo: newSaldo, NewMora: newMora, Estado: "parcial",
+	}
 	if newSaldo == 0 && newMora == 0 {
-		estado = "pagada"
-		marcarFecha = true
+		d.Estado = "pagada"
+		d.MarcarFecha = true
 	}
+	return d, nil
+}
 
-	cuotaInfo, err := s.loanRepo.UpdateCuotaAfterPayment(ctx, tx, in.CuotaID, newSaldo, newMora, estado, marcarFecha)
-	if err != nil {
-		return models.PagoResult{}, err
-	}
-
-	// 5. Si todas las cuotas del préstamo quedaron en cero → finalizado.
-	prestamoInfo := models.PrestamoInfo{ID: snap.PrestamoID, Estado: snap.EstadoPrestamo}
-	if estado == "pagada" {
-		allPaid, err := s.loanRepo.AllCuotasPagadas(ctx, tx, snap.PrestamoID)
-		if err != nil {
-			return models.PagoResult{}, err
-		}
-		if allPaid {
-			prestamoInfo, err = s.loanRepo.MarkPrestamoFinalizado(ctx, tx, snap.PrestamoID)
-			if err != nil {
-				return models.PagoResult{}, err
+// Register registra un pago de forma correcta y recuperable.
+//
+// Garantías:
+//   - Idempotencia: si se reenvía con la misma Idempotency-Key, devuelve la
+//     respuesta original sin volver a cobrar (replayed=true).
+//   - El dinero nunca se pierde: el pago + el evento de outbox se commitean
+//     atomicamente en la DB pagos ANTES de commitear la cuota en la DB
+//     prestamos. Si el commit de prestamos falla, el consumer del outbox
+//     aplica la cuota de forma idempotente.
+//
+// Devuelve (resultado, replayed, error).
+func (s *PaymentService) Register(ctx context.Context, in models.CreatePagoInput, idempotencyKey string) (models.PagoResult, bool, error) {
+	// 1. Idempotencia: ¿ya procesamos esta clave?
+	if idempotencyKey != "" {
+		if resp, found, err := s.pagoRepo.FindByIdempotencyKey(ctx, idempotencyKey); err != nil {
+			return models.PagoResult{}, false, err
+		} else if found {
+			var r models.PagoResult
+			if err := json.Unmarshal(resp, &r); err != nil {
+				return models.PagoResult{}, false, fmt.Errorf("decode idempotent response: %w", err)
 			}
+			return r, true, nil
 		}
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return models.PagoResult{}, fmt.Errorf("commit prestamos tx: %w", err)
+	// 2. Pagos previos de la cuota (para distribuir parciales correctamente).
+	interesYa, capitalYa, err := s.pagoRepo.PreviousPaidByCuota(ctx, in.CuotaID)
+	if err != nil {
+		return models.PagoResult{}, false, fmt.Errorf("previous paid: %w", err)
 	}
 
-	// 6. Registrar el pago en DB pagos (transacción aparte). Si falla acá,
-	//    se debe reconciliar manualmente (ver LIMITACIÓN arriba).
+	// 3. TX-prestamos: lock de la cuota + snapshot + distribución + validación.
+	ltx, err := s.loanRepo.Pool().Begin(ctx)
+	if err != nil {
+		return models.PagoResult{}, false, fmt.Errorf("begin prestamos tx: %w", err)
+	}
+	defer ltx.Rollback(ctx)
+
+	snap, err := s.loanRepo.LockCuotaWithPrestamo(ctx, ltx, in.CuotaID)
+	if err != nil {
+		return models.PagoResult{}, false, err
+	}
+	if snap.Estado == "pagada" {
+		return models.PagoResult{}, false, repository.ErrCuotaPagada
+	}
+
+	dist, err := distribuir(snap, interesYa, capitalYa, in.MontoPagado)
+	if err != nil {
+		return models.PagoResult{}, false, err
+	}
+
+	// 4. Aplicar a la cuota (mismo lock). Idempotente vía pago_aplicaciones.
+	pagoID := uuid.New()
+	applyRes, err := s.loanRepo.ApplyPagoToCuota(ctx, ltx, repository.PagoAplicacion{
+		PagoID:  pagoID,
+		CuotaID: in.CuotaID,
+		Capital: dist.Capital,
+		Interes: dist.Interes,
+		Mora:    dist.Mora,
+	})
+	if err != nil {
+		return models.PagoResult{}, false, err
+	}
+
+	// 5. TX-pagos: pago + movimientos + outbox + idempotencia (atómico).
 	tipo := models.TipoTotal
-	if estado != "pagada" {
+	if dist.Estado != "pagada" {
 		tipo = models.TipoParcial
 	}
-
 	pago := models.Pago{
+		ID:            pagoID,
 		ClienteID:     snap.ClienteID,
 		PrestamoID:    snap.PrestamoID,
 		CuotaID:       &in.CuotaID,
 		FechaPago:     time.Now(),
 		MontoPagado:   round2(in.MontoPagado),
-		CapitalPagado: capitalPagado,
-		InteresPagado: interesPagado,
-		MoraPagada:    moraPagada,
+		CapitalPagado: dist.Capital,
+		InteresPagado: dist.Interes,
+		MoraPagada:    dist.Mora,
 		Tipo:          tipo,
 		MetodoPago:    in.MetodoPago,
 		UsuarioID:     in.UsuarioID,
 		Observaciones: in.Observaciones,
 	}
-
 	movimientos := []models.Movimiento{
-		{Concepto: "mora", Monto: moraPagada},
-		{Concepto: "interes", Monto: interesPagado},
-		{Concepto: "capital", Monto: capitalPagado},
+		{Concepto: "mora", Monto: dist.Mora},
+		{Concepto: "interes", Monto: dist.Interes},
+		{Concepto: "capital", Monto: dist.Capital},
 	}
 
-	pagoInsertado, movsInsertados, err := s.pagoRepo.InsertPago(ctx, pago, movimientos)
+	ptx, err := s.pagoRepo.Pool().Begin(ctx)
 	if err != nil {
-		return models.PagoResult{}, fmt.Errorf("insert pago (cuota %s ya actualizada): %w", in.CuotaID, err)
+		return models.PagoResult{}, false, fmt.Errorf("begin pagos tx: %w", err)
+	}
+	defer ptx.Rollback(ctx)
+
+	pagoIns, movsIns, err := s.pagoRepo.InsertPagoTx(ctx, ptx, pago, movimientos)
+	if err != nil {
+		return models.PagoResult{}, false, fmt.Errorf("insert pago: %w", err)
 	}
 
-	return models.PagoResult{
-		Pago:        pagoInsertado,
-		Movimientos: movsInsertados,
-		Cuota:       cuotaInfo,
-		Prestamo:    prestamoInfo,
-	}, nil
+	evt := events.PagoRegistrado{
+		PagoID:     pagoIns.ID,
+		CuotaID:    in.CuotaID,
+		PrestamoID: snap.PrestamoID,
+		ClienteID:  snap.ClienteID,
+		Capital:    dist.Capital,
+		Interes:    dist.Interes,
+		Mora:       dist.Mora,
+		OcurridoEn: pagoIns.FechaPago,
+	}
+	payload, err := evt.Marshal()
+	if err != nil {
+		return models.PagoResult{}, false, fmt.Errorf("marshal event: %w", err)
+	}
+	if err := repository.InsertOutboxTx(ctx, ptx, repository.OutboxEvent{
+		AggregateType: events.AggregatePago,
+		AggregateID:   pagoIns.ID,
+		EventType:     events.TypePagoRegistrado,
+		Payload:       payload,
+	}); err != nil {
+		return models.PagoResult{}, false, err
+	}
+
+	result := models.PagoResult{
+		Pago:        pagoIns,
+		Movimientos: movsIns,
+		Cuota:       applyRes.Cuota,
+		Prestamo:    applyRes.Prestamo,
+	}
+
+	if idempotencyKey != "" {
+		respJSON, err := json.Marshal(result)
+		if err != nil {
+			return models.PagoResult{}, false, fmt.Errorf("encode response: %w", err)
+		}
+		if err := s.pagoRepo.SaveIdempotencyKeyTx(ctx, ptx, idempotencyKey, pagoIns.ID, respJSON); err != nil {
+			return models.PagoResult{}, false, err
+		}
+	}
+
+	// 6. Commit pagos PRIMERO: el dinero y el evento quedan durables.
+	if err := ptx.Commit(ctx); err != nil {
+		return models.PagoResult{}, false, fmt.Errorf("commit pagos tx: %w", err)
+	}
+
+	// 7. Commit prestamos. Si falla AQUÍ, el dinero ya está registrado y el
+	//    evento de outbox sin publicar → el consumer aplicará la cuota. La
+	//    respuesta refleja el estado al que converge.
+	if err := ltx.Commit(ctx); err != nil {
+		s.logger.Error("commit prestamos falló tras registrar pago; el outbox reconciliará la cuota",
+			"pago_id", pagoIns.ID, "cuota_id", in.CuotaID, "err", err)
+	}
+
+	return result, false, nil
 }
 
 func round2(x float64) float64 {

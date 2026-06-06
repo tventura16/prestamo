@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -82,33 +83,154 @@ type PreviousPaid struct {
 // Se llama desde el repo de pagos, no desde acá — pero el modelo lo dejamos
 // definido aquí para mantenerlo cerca de la lógica de negocio.
 
-// UpdateCuotaAfterPayment actualiza saldo, mora, estado y fecha_pago en una cuota.
-func (r *LoanRepository) UpdateCuotaAfterPayment(ctx context.Context, tx pgx.Tx,
-	cuotaID uuid.UUID, newSaldo, newMora float64, estado string, marcarPagoAhora bool,
-) (models.CuotaInfo, error) {
-	var info models.CuotaInfo
-	var query string
-	if marcarPagoAhora {
-		query = `UPDATE cuotas SET
-			saldo_pendiente = $1, mora_acumulada = $2,
-			estado = $3, fecha_pago = NOW()
-			WHERE id = $4
-			RETURNING id, prestamo_id, numero, saldo_pendiente, mora_acumulada, estado`
-	} else {
-		query = `UPDATE cuotas SET
-			saldo_pendiente = $1, mora_acumulada = $2, estado = $3
-			WHERE id = $4
-			RETURNING id, prestamo_id, numero, saldo_pendiente, mora_acumulada, estado`
+// PagoAplicacion es la intención de aplicar un pago concreto a una cuota.
+// Los montos provienen del cálculo de distribución hecho al registrar el
+// pago; ApplyPagoToCuota los clampa contra el saldo vivo.
+type PagoAplicacion struct {
+	PagoID  uuid.UUID
+	CuotaID uuid.UUID
+	Capital float64
+	Interes float64
+	Mora    float64
+}
+
+// ApplyResult informa el resultado de aplicar un pago a una cuota.
+type ApplyResult struct {
+	Cuota    models.CuotaInfo
+	Prestamo models.PrestamoInfo
+	Skipped  bool // true si el pago ya estaba aplicado (idempotencia)
+}
+
+// ApplyPagoToCuota aplica un pago a su cuota de forma IDEMPOTENTE dentro de
+// la transacción dada (DB prestamos). Es el único punto de escritura del
+// saldo de la cuota, usado tanto por el fast-path inline como por el consumer
+// del outbox.
+//
+//	1. Guard: si pago_aplicaciones ya tiene el pago_id → no reaplica (Skipped).
+//	2. SELECT FOR UPDATE de la cuota: serializa pagos concurrentes.
+//	3. Clampa los montos al saldo/mora vivos (un pago concurrente pudo
+//	   reducir el saldo desde que se calculó la distribución).
+//	4. Actualiza la cuota; si queda saldada y todas las del préstamo también,
+//	   marca el préstamo como finalizado.
+//	5. Inserta el guard de idempotencia.
+func (r *LoanRepository) ApplyPagoToCuota(ctx context.Context, tx pgx.Tx, app PagoAplicacion) (ApplyResult, error) {
+	// 1. Guard de idempotencia.
+	var exists bool
+	if err := tx.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM pago_aplicaciones WHERE pago_id = $1)`, app.PagoID,
+	).Scan(&exists); err != nil {
+		return ApplyResult{}, fmt.Errorf("check guard: %w", err)
 	}
-	err := tx.QueryRow(ctx, query, newSaldo, newMora, estado, cuotaID).Scan(
+	if exists {
+		cuota, prestamo, err := r.readCuotaPrestamo(ctx, tx, app.CuotaID)
+		if err != nil {
+			return ApplyResult{}, err
+		}
+		return ApplyResult{Cuota: cuota, Prestamo: prestamo, Skipped: true}, nil
+	}
+
+	// 2. Lock de la cuota + estado del préstamo.
+	var saldo, mora float64
+	var prestamoID uuid.UUID
+	var numero int
+	var estadoPrestamo string
+	err := tx.QueryRow(ctx, `
+		SELECT c.prestamo_id, c.numero, c.saldo_pendiente, c.mora_acumulada, p.estado
+		FROM cuotas c JOIN prestamos p ON p.id = c.prestamo_id
+		WHERE c.id = $1
+		FOR UPDATE OF c, p`, app.CuotaID,
+	).Scan(&prestamoID, &numero, &saldo, &mora, &estadoPrestamo)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ApplyResult{}, ErrCuotaNotFound
+		}
+		return ApplyResult{}, fmt.Errorf("lock cuota: %w", err)
+	}
+
+	// 3. Clamp contra saldo vivo. El interés se cubre antes que el capital.
+	moraAplic := round2(math.Min(app.Mora, mora))
+	saldoAplic := round2(math.Min(round2(app.Interes+app.Capital), saldo))
+	interesAplic := round2(math.Min(app.Interes, saldoAplic))
+	capitalAplic := round2(saldoAplic - interesAplic)
+	newSaldo := round2(saldo - saldoAplic)
+	if newSaldo < 0 {
+		newSaldo = 0
+	}
+	newMora := round2(mora - moraAplic)
+	if newMora < 0 {
+		newMora = 0
+	}
+
+	estado := "parcial"
+	marcarFecha := false
+	if newSaldo == 0 && newMora == 0 {
+		estado = "pagada"
+		marcarFecha = true
+	}
+
+	// 4. Update cuota.
+	var info models.CuotaInfo
+	query := `UPDATE cuotas SET saldo_pendiente = $1, mora_acumulada = $2, estado = $3`
+	if marcarFecha {
+		query += `, fecha_pago = NOW()`
+	}
+	query += ` WHERE id = $4
+		RETURNING id, prestamo_id, numero, saldo_pendiente, mora_acumulada, estado`
+	if err := tx.QueryRow(ctx, query, newSaldo, newMora, estado, app.CuotaID).Scan(
 		&info.ID, &info.PrestamoID, &info.Numero,
 		&info.SaldoPendiente, &info.MoraAcumulada, &info.Estado,
-	)
-	if err != nil {
-		return models.CuotaInfo{}, fmt.Errorf("update cuota: %w", err)
+	); err != nil {
+		return ApplyResult{}, fmt.Errorf("update cuota: %w", err)
 	}
-	return info, nil
+
+	// Préstamo: finalizar si todas las cuotas quedaron saldadas.
+	prestamoInfo := models.PrestamoInfo{ID: prestamoID, Estado: estadoPrestamo}
+	if estado == "pagada" {
+		allPaid, err := r.AllCuotasPagadas(ctx, tx, prestamoID)
+		if err != nil {
+			return ApplyResult{}, err
+		}
+		if allPaid {
+			prestamoInfo, err = r.MarkPrestamoFinalizado(ctx, tx, prestamoID)
+			if err != nil {
+				return ApplyResult{}, err
+			}
+		}
+	}
+
+	// 5. Guard de idempotencia con los montos efectivamente aplicados.
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO pago_aplicaciones (pago_id, cuota_id, capital, interes, mora)
+		VALUES ($1, $2, $3, $4, $5)`,
+		app.PagoID, app.CuotaID, capitalAplic, interesAplic, moraAplic,
+	); err != nil {
+		return ApplyResult{}, fmt.Errorf("insert guard: %w", err)
+	}
+
+	return ApplyResult{Cuota: info, Prestamo: prestamoInfo}, nil
 }
+
+// readCuotaPrestamo lee el estado actual (sin lock) para respuestas idempotentes.
+func (r *LoanRepository) readCuotaPrestamo(ctx context.Context, tx pgx.Tx, cuotaID uuid.UUID) (models.CuotaInfo, models.PrestamoInfo, error) {
+	var c models.CuotaInfo
+	var p models.PrestamoInfo
+	err := tx.QueryRow(ctx, `
+		SELECT c.id, c.prestamo_id, c.numero, c.saldo_pendiente, c.mora_acumulada, c.estado,
+		       p.id, p.estado
+		FROM cuotas c JOIN prestamos p ON p.id = c.prestamo_id
+		WHERE c.id = $1`, cuotaID,
+	).Scan(&c.ID, &c.PrestamoID, &c.Numero, &c.SaldoPendiente, &c.MoraAcumulada, &c.Estado,
+		&p.ID, &p.Estado)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return models.CuotaInfo{}, models.PrestamoInfo{}, ErrCuotaNotFound
+		}
+		return models.CuotaInfo{}, models.PrestamoInfo{}, fmt.Errorf("read cuota: %w", err)
+	}
+	return c, p, nil
+}
+
+func round2(x float64) float64 { return math.Round(x*100) / 100 }
 
 // AllCuotasPagadas devuelve true si no quedan cuotas con saldo > 0.
 func (r *LoanRepository) AllCuotasPagadas(ctx context.Context, tx pgx.Tx, prestamoID uuid.UUID) (bool, error) {

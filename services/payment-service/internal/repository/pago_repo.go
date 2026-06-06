@@ -48,30 +48,31 @@ func (r *PagoRepository) PreviousPaidByCuota(ctx context.Context, cuotaID uuid.U
 	return
 }
 
-// InsertPago crea el pago + movimientos en transacción atómica dentro
-// de la DB pagos.
-func (r *PagoRepository) InsertPago(ctx context.Context,
+// Pool expone el pool de la DB pagos para que el service inicie la
+// transacción que envuelve pago + movimientos + outbox + idempotencia.
+func (r *PagoRepository) Pool() *pgxpool.Pool { return r.pool }
+
+// InsertPagoTx crea el pago + movimientos dentro de la transacción dada
+// (DB pagos). No hace commit: el service controla el commit para incluir
+// también el evento de outbox y la clave de idempotencia en la misma TX.
+func (r *PagoRepository) InsertPagoTx(ctx context.Context, tx pgx.Tx,
 	p models.Pago, movimientos []models.Movimiento,
 ) (models.Pago, []models.Movimiento, error) {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return models.Pago{}, nil, fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
 	var numero string
 	if err := tx.QueryRow(ctx, `SELECT 'R-' || LPAD(nextval('seq_recibo')::TEXT, 8, '0')`).Scan(&numero); err != nil {
 		return models.Pago{}, nil, fmt.Errorf("next recibo: %w", err)
 	}
 	p.NumeroRecibo = &numero
 
+	// El id se genera en el service (uuid.New) para conocerlo antes de
+	// aplicar la cuota en la otra transacción.
 	pagoRow := tx.QueryRow(ctx, `INSERT INTO pagos
-		(cliente_id, prestamo_id, cuota_id, fecha_pago, monto_pagado,
+		(id, cliente_id, prestamo_id, cuota_id, fecha_pago, monto_pagado,
 		 capital_pagado, interes_pagado, mora_pagada, tipo, metodo_pago,
 		 usuario_id, numero_recibo, observaciones)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING `+pagoColumns,
-		p.ClienteID, p.PrestamoID, p.CuotaID, p.FechaPago, p.MontoPagado,
+		p.ID, p.ClienteID, p.PrestamoID, p.CuotaID, p.FechaPago, p.MontoPagado,
 		p.CapitalPagado, p.InteresPagado, p.MoraPagada, p.Tipo, p.MetodoPago,
 		p.UsuarioID, p.NumeroRecibo, p.Observaciones,
 	)
@@ -98,10 +99,35 @@ func (r *PagoRepository) InsertPago(ctx context.Context,
 		insertedMovs = append(insertedMovs, inserted)
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return models.Pago{}, nil, fmt.Errorf("commit: %w", err)
-	}
 	return pagoInsertado, insertedMovs, nil
+}
+
+// FindByIdempotencyKey devuelve la respuesta almacenada para una clave de
+// idempotencia. found=false si la clave no existe.
+func (r *PagoRepository) FindByIdempotencyKey(ctx context.Context, key string) (response []byte, found bool, err error) {
+	err = r.pool.QueryRow(ctx,
+		`SELECT response FROM idempotency_keys WHERE key = $1`, key,
+	).Scan(&response)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("find idempotency key: %w", err)
+	}
+	return response, true, nil
+}
+
+// SaveIdempotencyKeyTx guarda la clave + respuesta dentro de la TX dada.
+func (r *PagoRepository) SaveIdempotencyKeyTx(ctx context.Context, tx pgx.Tx,
+	key string, pagoID uuid.UUID, response []byte,
+) error {
+	_, err := tx.Exec(ctx,
+		`INSERT INTO idempotency_keys (key, pago_id, response) VALUES ($1, $2, $3)`,
+		key, pagoID, response)
+	if err != nil {
+		return fmt.Errorf("save idempotency key: %w", err)
+	}
+	return nil
 }
 
 func (r *PagoRepository) GetByID(ctx context.Context, id uuid.UUID) (models.Pago, []models.Movimiento, error) {

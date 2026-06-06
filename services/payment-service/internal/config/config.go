@@ -3,6 +3,9 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
+	"time"
 )
 
 type Config struct {
@@ -25,6 +28,15 @@ type Config struct {
 	KeycloakRealm       string
 	KeycloakClientID    string
 	AuthEnabled         bool
+
+	// Mensajería / outbox.
+	KafkaBrokers       []string
+	KafkaTopic         string
+	KafkaDLQTopic      string
+	ConsumerGroup      string
+	RelayInterval      time.Duration
+	ConsumerMaxRetries int
+	EventsEnabled      bool
 }
 
 func Load() Config {
@@ -43,6 +55,14 @@ func Load() Config {
 		KeycloakRealm:       getenv("KEYCLOAK_REALM", "prestamos"),
 		KeycloakClientID:    getenv("KEYCLOAK_CLIENT_ID", "prestamos-frontend"),
 		AuthEnabled:         getenv("AUTH_ENABLED", "true") == "true",
+
+		KafkaBrokers:       splitCSV(getenv("KAFKA_BROKERS", "kafka:9092")),
+		KafkaTopic:         getenv("KAFKA_TOPIC", "pagos.eventos"),
+		KafkaDLQTopic:      getenv("KAFKA_DLQ_TOPIC", "pagos.eventos.dlq"),
+		ConsumerGroup:      getenv("KAFKA_CONSUMER_GROUP", "payment-service"),
+		RelayInterval:      time.Duration(getenvInt("OUTBOX_RELAY_INTERVAL_MS", 1000)) * time.Millisecond,
+		ConsumerMaxRetries: getenvInt("CONSUMER_MAX_RETRIES", 5),
+		EventsEnabled:      getenv("EVENTS_ENABLED", "true") == "true",
 	}
 }
 
@@ -56,4 +76,24 @@ func getenv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+func getenvInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
+func splitCSV(s string) []string {
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

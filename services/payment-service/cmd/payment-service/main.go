@@ -16,8 +16,11 @@ import (
 
 	"github.com/prestamos/payment-service/internal/auth"
 	"github.com/prestamos/payment-service/internal/config"
+	"github.com/prestamos/payment-service/internal/consumer"
 	"github.com/prestamos/payment-service/internal/db"
 	"github.com/prestamos/payment-service/internal/handler"
+	"github.com/prestamos/payment-service/internal/messaging"
+	"github.com/prestamos/payment-service/internal/outbox"
 	"github.com/prestamos/payment-service/internal/repository"
 	"github.com/prestamos/payment-service/internal/service"
 )
@@ -96,8 +99,36 @@ func main() {
 
 	pagoRepo := repository.NewPagoRepository(pagosPool)
 	loanRepo := repository.NewLoanRepository(prestamosPool)
-	paymentSvc := service.NewPaymentService(pagoRepo, loanRepo)
+	outboxRepo := repository.NewOutboxRepository(pagosPool)
+	paymentSvc := service.NewPaymentService(pagoRepo, loanRepo, logger)
 	pagoHandler := handler.NewPagoHandler(paymentSvc, pagoRepo)
+
+	// ───── Mensajería: outbox relay + consumer ─────
+	var publisher *messaging.Publisher
+	if cfg.EventsEnabled {
+		topicCtx, cancelTopic := context.WithTimeout(ctx, 30*time.Second)
+		if err := messaging.EnsureTopics(topicCtx, cfg.KafkaBrokers, cfg.KafkaTopic, cfg.KafkaDLQTopic); err != nil {
+			logger.Error("cannot ensure kafka topics", "err", err)
+			cancelTopic()
+			os.Exit(1)
+		}
+		cancelTopic()
+
+		publisher = messaging.NewPublisher(cfg.KafkaBrokers)
+		defer publisher.Close()
+
+		relay := outbox.NewRelay(outboxRepo, publisher, cfg.KafkaTopic, cfg.RelayInterval, logger)
+		go relay.Run(ctx)
+
+		reader := messaging.NewReader(cfg.KafkaBrokers, cfg.ConsumerGroup, cfg.KafkaTopic)
+		defer reader.Close()
+		pagoConsumer := consumer.NewPagoConsumer(reader, publisher, loanRepo, cfg.KafkaDLQTopic, cfg.ConsumerMaxRetries, logger)
+		go pagoConsumer.Run(ctx)
+
+		logger.Info("eventos habilitados", "topic", cfg.KafkaTopic, "brokers", cfg.KafkaBrokers)
+	} else {
+		logger.Warn("EVENTS DISABLED: outbox no se publicará (sólo fast-path inline)")
+	}
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
