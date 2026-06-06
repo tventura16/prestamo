@@ -25,6 +25,26 @@ export interface CuotaVencida {
   estado: string;
 }
 
+export interface ReporteDiario {
+  fecha: string;
+  ingresos: number;
+  pagos_recibidos: number;
+  mora_cobrada: number;
+  prestamos_nuevos: number;
+  clientes_nuevos: number;
+}
+
+export interface ReporteMensual {
+  anio: number;
+  mes: number;
+  ingresos: number;
+  intereses_pagados: number;
+  mora_cobrada: number;
+  prestamos_nuevos: number;
+  clientes_nuevos: number;
+  pagos_recibidos: number;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ReportService {
   private http = inject(HttpClient);
@@ -37,6 +57,16 @@ export class ReportService {
   overdue(limit = 50): Observable<{ total: number; items: CuotaVencida[] }> {
     return this.http.get<{ total: number; items: CuotaVencida[] }>(`${this.base}/overdue`, {
       params: { limit: String(limit) },
+    });
+  }
+
+  daily(date: string): Observable<ReporteDiario> {
+    return this.http.get<ReporteDiario>(`${this.base}/daily`, { params: { date } });
+  }
+
+  monthly(year: number, month: number): Observable<ReporteMensual> {
+    return this.http.get<ReporteMensual>(`${this.base}/monthly`, {
+      params: { year: String(year), month: String(month) },
     });
   }
 }

@@ -45,4 +45,13 @@ export class DocumentService {
   downloadUrl(id: string): string {
     return `${this.base}/${id}/download`;
   }
+
+  /**
+   * Descarga autenticada del PDF como blob. Necesario porque el gateway exige
+   * JWT (P1): una navegación con window.open no lleva el Bearer token, pero
+   * esta request pasa por el interceptor que lo agrega.
+   */
+  download(id: string): Observable<Blob> {
+    return this.http.get(`${this.base}/${id}/download`, { responseType: 'blob' });
+  }
 }

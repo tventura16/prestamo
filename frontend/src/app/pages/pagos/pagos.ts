@@ -101,8 +101,19 @@ export class Pagos implements OnInit {
     this.generando.set(p.id);
     this.docSvc.generateReceipt(p.id).subscribe({
       next: doc => {
-        this.generando.set(null);
-        window.open(this.docSvc.downloadUrl(doc.id), '_blank');
+        // Descarga autenticada (el gateway exige JWT; window.open no lleva token).
+        this.docSvc.download(doc.id).subscribe({
+          next: blob => {
+            this.generando.set(null);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = doc.nombre_archivo || `recibo-${doc.id}.pdf`;
+            a.click();
+            URL.revokeObjectURL(url);
+          },
+          error: e => { this.error.set(e.error?.error || e.message); this.generando.set(null); },
+        });
       },
       error: e => {
         this.error.set(e.error?.error || e.message);

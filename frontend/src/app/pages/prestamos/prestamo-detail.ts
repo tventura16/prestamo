@@ -394,8 +394,12 @@ export class PrestamoDetail implements OnInit {
     this.generando.set(true);
     this.docSvc.generateContract(p.id).subscribe({
       next: doc => {
-        this.pdfUrl.set(this.docSvc.downloadUrl(doc.id));
-        this.generando.set(false);
+        // Descarga autenticada → blob URL (el gateway exige JWT; un href directo
+        // al endpoint no llevaría el Bearer token y daría 401).
+        this.docSvc.download(doc.id).subscribe({
+          next: blob => { this.pdfUrl.set(URL.createObjectURL(blob)); this.generando.set(false); },
+          error: e => { this.error.set(e.error?.error || e.message); this.generando.set(false); },
+        });
       },
       error: e => {
         this.error.set(e.error?.error || e.message);
