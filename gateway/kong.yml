@@ -40,7 +40,12 @@ services:
           - DELETE
           - OPTIONS
     plugins:
-      # - name: jwt   # desactivado hasta integrar Keycloak
+      - name: jwt
+        config:
+          key_claim_name: iss          # casa el claim iss del token con el jwt_secret del consumer
+          claims_to_verify:
+            - exp                       # rechaza tokens expirados
+          run_on_preflight: false       # deja pasar el preflight CORS (OPTIONS sin token)
       - name: rate-limiting
         config:
           minute: 120
@@ -66,7 +71,12 @@ services:
           - DELETE
           - OPTIONS
     plugins:
-      # - name: jwt   # desactivado hasta integrar Keycloak
+      - name: jwt
+        config:
+          key_claim_name: iss          # casa el claim iss del token con el jwt_secret del consumer
+          claims_to_verify:
+            - exp                       # rechaza tokens expirados
+          run_on_preflight: false       # deja pasar el preflight CORS (OPTIONS sin token)
       - name: rate-limiting
         config:
           minute: 120
@@ -92,7 +102,12 @@ services:
           - DELETE
           - OPTIONS
     plugins:
-      # - name: jwt   # desactivado hasta integrar Keycloak
+      - name: jwt
+        config:
+          key_claim_name: iss          # casa el claim iss del token con el jwt_secret del consumer
+          claims_to_verify:
+            - exp                       # rechaza tokens expirados
+          run_on_preflight: false       # deja pasar el preflight CORS (OPTIONS sin token)
       - name: rate-limiting
         config:
           minute: 120
@@ -115,7 +130,12 @@ services:
           - POST
           - OPTIONS
     plugins:
-      # - name: jwt   # desactivado hasta integrar Keycloak
+      - name: jwt
+        config:
+          key_claim_name: iss          # casa el claim iss del token con el jwt_secret del consumer
+          claims_to_verify:
+            - exp                       # rechaza tokens expirados
+          run_on_preflight: false       # deja pasar el preflight CORS (OPTIONS sin token)
       - name: rate-limiting
         config:
           minute: 60
@@ -138,7 +158,12 @@ services:
           - POST
           - OPTIONS
     plugins:
-      # - name: jwt   # desactivado hasta integrar Keycloak
+      - name: jwt
+        config:
+          key_claim_name: iss          # casa el claim iss del token con el jwt_secret del consumer
+          claims_to_verify:
+            - exp                       # rechaza tokens expirados
+          run_on_preflight: false       # deja pasar el preflight CORS (OPTIONS sin token)
       - name: rate-limiting
         config:
           minute: 60
@@ -170,6 +195,7 @@ plugins:
         - Content-MD5
         - Content-Type
         - Date
+        - Idempotency-Key
         - X-Auth-Token
         - X-Request-ID
       exposed_headers:
@@ -208,15 +234,25 @@ plugins:
       upstream_health_metrics: true
 
 # ───────────────────────────────────────────────
-# Consumers (placeholder — administrar por API admin)
+# Autenticación JWT — consumer con la clave pública del realm
 # ───────────────────────────────────────────────
-# Los consumers se crean dinámicamente desde el flujo OIDC con Keycloak.
-# Para validar JWTs emitidos por Keycloak, crear un consumer con la clave
-# pública del realm a través de la Admin API:
-#
-#   POST /consumers
-#     { "username": "keycloak-realm-prestamos" }
-#   POST /consumers/keycloak-realm-prestamos/jwt
-#     { "algorithm": "RS256",
-#       "key": "<iss del token, ej: http://auth-service:8080/realms/prestamos>",
-#       "rsa_public_key": "<PEM de la pubkey del realm>" }
+# El plugin `jwt` (por servicio) valida firma RS256 + exp y casa el claim `iss`
+# del token con el `key` de este jwt_secret. La clave pública corresponde al
+# keypair fijo embebido en el realm import (keycloak/import/realm-prestamos.json,
+# componente rsa-imported-prestamos), así es determinista entre rebuilds.
+# La autorización por roles permanece en cada microservicio (defensa en profundidad).
+consumers:
+  - username: keycloak-prestamos
+    jwt_secrets:
+      - key: "http://localhost:8080/realms/prestamos"   # == claim iss de los tokens
+        algorithm: RS256
+        rsa_public_key: |
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA25r05sBqtGeHGyS2Sgpo
+          nQr5xdSY2N8AvacmgVBFu1M8S44uonUzY67vpPyZyAy/EVVsTusqq4GzPF5Ga13j
+          FnaVsuvUnC3quY23LYnP8XkJLphDD5kDQi6EcUSdaqNApF843pjkcjdB0AA2Ra86
+          Je/Ftfp6k2DCoaW/+PMJOAQSke+lSmKMhZYFuGDqqs7rN5fLD4WFy4SAU+dpS6ax
+          lMcssrXQrAzkVclSN1C4tQZlSeY2cBtAecO5tilD+YSVvGDr5J2O8ZvoKLjgkp3g
+          9EbVYkiMTY/61XKT+Pib+UW3mxm7pfmALrC8jJHVBaee83mDgXCMd5rpEAsdD7BT
+          XwIDAQAB
+          -----END PUBLIC KEY-----

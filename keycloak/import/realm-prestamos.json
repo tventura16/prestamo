@@ -10,62 +10,89 @@
   "bruteForceProtected": true,
   "accessTokenLifespan": 3600,
   "ssoSessionIdleTimeout": 1800,
-
   "roles": {
     "realm": [
-      { "name": "admin",      "description": "Administrador del sistema" },
-      { "name": "supervisor", "description": "Supervisor: aprueba prestamos y revisa reportes" },
-      { "name": "cajero",     "description": "Cajero: registra clientes y pagos" }
+      {
+        "name": "admin",
+        "description": "Administrador del sistema"
+      },
+      {
+        "name": "supervisor",
+        "description": "Supervisor: aprueba prestamos y revisa reportes"
+      },
+      {
+        "name": "cajero",
+        "description": "Cajero: registra clientes y pagos"
+      }
     ]
   },
-
   "users": [
     {
-      "username":  "admin",
-      "enabled":   true,
-      "email":     "admin@prestamos.local",
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@prestamos.local",
       "emailVerified": true,
       "firstName": "Admin",
-      "lastName":  "Sistema",
+      "lastName": "Sistema",
       "credentials": [
-        { "type": "password", "value": "admin123", "temporary": false }
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
       ],
-      "realmRoles": ["admin", "supervisor", "cajero"]
+      "realmRoles": [
+        "admin",
+        "supervisor",
+        "cajero"
+      ]
     },
     {
-      "username":  "supervisor1",
-      "enabled":   true,
-      "email":     "supervisor@prestamos.local",
+      "username": "supervisor1",
+      "enabled": true,
+      "email": "supervisor@prestamos.local",
       "emailVerified": true,
       "firstName": "Maria",
-      "lastName":  "Supervisora",
+      "lastName": "Supervisora",
       "credentials": [
-        { "type": "password", "value": "supervisor123", "temporary": false }
+        {
+          "type": "password",
+          "value": "supervisor123",
+          "temporary": false
+        }
       ],
-      "realmRoles": ["supervisor", "cajero"]
+      "realmRoles": [
+        "supervisor",
+        "cajero"
+      ]
     },
     {
-      "username":  "cajero1",
-      "enabled":   true,
-      "email":     "cajero1@prestamos.local",
+      "username": "cajero1",
+      "enabled": true,
+      "email": "cajero1@prestamos.local",
       "emailVerified": true,
       "firstName": "Pedro",
-      "lastName":  "Cajero",
+      "lastName": "Cajero",
       "credentials": [
-        { "type": "password", "value": "cajero123", "temporary": false }
+        {
+          "type": "password",
+          "value": "cajero123",
+          "temporary": false
+        }
       ],
-      "realmRoles": ["cajero"]
+      "realmRoles": [
+        "cajero"
+      ]
     }
   ],
-
   "clients": [
     {
-      "clientId":               "prestamos-frontend",
-      "name":                   "Prestamos Frontend",
-      "enabled":                true,
-      "publicClient":           true,
-      "standardFlowEnabled":    true,
-      "implicitFlowEnabled":    false,
+      "clientId": "prestamos-frontend",
+      "name": "Prestamos Frontend",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
       "redirectUris": [
@@ -78,8 +105,37 @@
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris":   "http://localhost/*"
+        "post.logout.redirect.uris": "http://localhost/*"
       }
     }
-  ]
+  ],
+  "components": {
+    "org.keycloak.keys.KeyProvider": [
+      {
+        "name": "rsa-imported-prestamos",
+        "providerId": "rsa",
+        "subComponents": {},
+        "config": {
+          "privateKey": [
+            "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDbmvTmwGq0Z4cbJLZKCmidCvnF1JjY3wC9pyaBUEW7UzxLji6idTNjru+k/JnIDL8RVWxO6yqrgbM8XkZrXeMWdpWy69ScLeq5jbctic/xeQkumEMPmQNCLoRxRJ1qo0CkXzjemORyN0HQADZFrzol78W1+nqTYMKhpb/48wk4BBKR76VKYoyFlgW4YOqqzus3l8sPhYXLhIBT52lLprGUxyyytdCsDORVyVI3ULi1BmVJ5jZwG0B5w7m2KUP5hJW8YOvknY7xm+gouOCSneD0RtViSIxNj/rVcpP4+Jv5RbebGbul+YAusLyMkdUFp57zeYOBcIx3mukQCx0PsFNfAgMBAAECggEAP7Hfo4geyumWOcy5pJsFQbt7u6IQnSJ9RATVub8PIqifPejk5NDqkVidgHSVo/zydDQbIH68Fxec5X8QnLaUFaFahRU6yvvUb3JHtYkZy5eIDsAx/zWpyMnWN0YoBFSKfMJzq7ib1fbp+0r8ctTCoFs9tK0MXW+8tAbvueTAAUM/OLU9CfV5nwkJLAcdd7vJqtyCz3m3DnZncz5P20klnNeQIKdDsEgwGi/emg1k+Y7HmdLyWMhbXSvnQL0I80t85N+xxOD1mTxdl/cMLnXzpfHybZXhC9LlHXEuS/khsWerD640dy+mGWojnGEy9VB2ZclgqhFMJVOq0k8ykaBINQKBgQD/Dw/b3TYbQJmsE9hMW/sHG+6rCFi6Pu9iWumi/99fvGxNFHW/WR05GG+bcqN77YhCn2Mv6f+4Psz+Tge9l1AvN2/ziSSk3VjfgQztak3M2vZL29/E2+/1yx0NqO9QJ3AKch1bNibluI5uHlDJJwM6tsAzwDxDuYUSm8efY0ndtQKBgQDcamdqkjItuOgQqR2T1r8hybUhFCTcu0MNllSXruFcXRAbs4Kq2RGraODYM+mzOlyXkhgk0rBLP5YaRWMjBztCe1FEysJeBr2lSvjNEiE5Gkhx4dLZPRap8oM14beJ26JfLzROUUo522oRhd9Hsxh1sBxvJgfHA3yWVAWU68Y5QwKBgHJ7aDrfh7GjxVYfci6T+pCuUOojzO+L4Bbdh5DKGJD4GgRe8pr4fM1r0myLgCXX8Bk3QWX4OfeQ+KIMlBzdFfibgXxmSjRVxdZMLmlCFbmlbneOMVpC/entSRUghooLqZaGsfaGz968f/GdWdVv1Vs9O/f+iQ487yXzFh7MihMhAoGBANckYPcr5iCs6I9CkyU3qm4vdUXpZKWzfxqnDsDTqRM/nzZ6vGNI569Y+obt/QG9SJ2Fs11V7VA1q6zO55pMN7KHreaoxpmCmN/bUwjP1m/nUKkgFG+I6jNODHaucDj2kgG4kKSVQg9BNMIP2sYgcRKGqOpww4ykwZn2P1CB5oUDAoGBAM8InXjBlUSFyu63AgDkfy1VfLyZQCqO9bsmXhpD/tKiiGahugHsPib5JDygtGhqI4haOoB9njyIAjEAHbT7SqVnIb1wG1H+13SuDgITVCAe2TgS2wtnJwAcj8wlyjY1+B+WiMN+EyG71C3CHAL11jwz9vrKFWlwLf408hWla3EX"
+          ],
+          "certificate": [
+            "MIIDFTCCAf2gAwIBAgIUddUtWnqtumVEN2uAgRPhkePSHgowDQYJKoZIhvcNAQELBQAwGjEYMBYGA1UEAwwPcHJlc3RhbW9zLXJlYWxtMB4XDTI2MDYwNjExMjEyMFoXDTM2MDYwMzExMjEyMFowGjEYMBYGA1UEAwwPcHJlc3RhbW9zLXJlYWxtMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA25r05sBqtGeHGyS2SgponQr5xdSY2N8AvacmgVBFu1M8S44uonUzY67vpPyZyAy/EVVsTusqq4GzPF5Ga13jFnaVsuvUnC3quY23LYnP8XkJLphDD5kDQi6EcUSdaqNApF843pjkcjdB0AA2Ra86Je/Ftfp6k2DCoaW/+PMJOAQSke+lSmKMhZYFuGDqqs7rN5fLD4WFy4SAU+dpS6axlMcssrXQrAzkVclSN1C4tQZlSeY2cBtAecO5tilD+YSVvGDr5J2O8ZvoKLjgkp3g9EbVYkiMTY/61XKT+Pib+UW3mxm7pfmALrC8jJHVBaee83mDgXCMd5rpEAsdD7BTXwIDAQABo1MwUTAdBgNVHQ4EFgQUc0oHg3/HrvuG4A72BI2Z9YU6I5gwHwYDVR0jBBgwFoAUc0oHg3/HrvuG4A72BI2Z9YU6I5gwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAgRj9uKrJ1LcFv6h7JXw0lFA/Bfs5+URdWL2/ktUJo1FZ+Mxm+JYxYLaSYUdloJ/hI/ZuqimebBgxgOh5FMEj1nDwOczwue43Vqd82BKllHSTblWbFTLT3mlAr7By00v26Lq/MrV71+W8pRasuAO6En6OzE72P7q1/OkQHJmb9Rlxl3d0g2CAUekDA55Llp/f5fpqs/ECMmbrgBGnyNJJOEU0FnLhvtK9oOeV61teIygWb8YPAB4aZ8Bn3tRpSo3LlgvMQ2vvsacRcM8vvAUubF2p7iCOodLpO7j+VlISxPOfjBKGTWZCmjsYIHte6yK0uGDehH/aQH1CYv8ID9oOtA=="
+          ],
+          "priority": [
+            "200"
+          ],
+          "algorithm": [
+            "RS256"
+          ],
+          "active": [
+            "true"
+          ],
+          "enabled": [
+            "true"
+          ]
+        }
+      }
+    ]
+  }
 }
