@@ -39,5 +39,7 @@ RUN echo "ok" > /usr/share/nginx/html/health
 EXPOSE 80 443
 
 # nginx ya viene como entrypoint en la imagen base
+# 127.0.0.1 (no "localhost"): dentro del contenedor localhost resuelve a ::1
+# (IPv6) y nginx escucha solo IPv4, lo que daría "connection refused".
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -qO- http://localhost/health || exit 1
+    CMD wget -qO- http://127.0.0.1/health || exit 1
