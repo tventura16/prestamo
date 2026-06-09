@@ -8,131 +8,104 @@ import { ClienteService, Cliente, CreateClienteInput } from '../../core/services
   selector: 'app-clientes',
   imports: [CommonModule, FormsModule, RouterLink],
   template: `
-    <div class="header">
-      <h2>Clientes</h2>
-      <button class="btn primary" (click)="toggleForm()">
+    <div class="mb-4 flex items-center justify-between gap-3">
+      <h2 class="m-0 text-xl font-semibold text-ink">Clientes</h2>
+      <button (click)="toggleForm()"
+              class="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white transition hover:bg-navy-light">
         {{ showForm() ? 'Cancelar' : '+ Nuevo cliente' }}
       </button>
     </div>
 
     @if (showForm()) {
-      <form class="form-card" (ngSubmit)="onSubmit()" #f="ngForm">
-        <div class="row">
-          <label>Nombres *
-            <input [(ngModel)]="form.nombres" name="nombres" required maxlength="100">
+      <form (ngSubmit)="onSubmit()" #f="ngForm"
+            class="mb-4 flex flex-col gap-3 rounded-lg bg-white p-5 shadow-sm">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label class="flex flex-col gap-1 text-sm text-slate-600">Nombres *
+            <input [(ngModel)]="form.nombres" name="nombres" required maxlength="100" class="ui-input">
           </label>
-          <label>Apellidos *
-            <input [(ngModel)]="form.apellidos" name="apellidos" required maxlength="100">
-          </label>
-        </div>
-        <div class="row">
-          <label>CI *
-            <input [(ngModel)]="form.ci" name="ci" required minlength="4" maxlength="20">
-          </label>
-          <label>Fecha nacimiento *
-            <input type="date" [(ngModel)]="form.fecha_nacimiento" name="fecha_nacimiento" required>
+          <label class="flex flex-col gap-1 text-sm text-slate-600">Apellidos *
+            <input [(ngModel)]="form.apellidos" name="apellidos" required maxlength="100" class="ui-input">
           </label>
         </div>
-        <div class="row">
-          <label>Teléfono
-            <input [(ngModel)]="form.telefono" name="telefono" maxlength="20">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label class="flex flex-col gap-1 text-sm text-slate-600">CI *
+            <input [(ngModel)]="form.ci" name="ci" required minlength="4" maxlength="20" class="ui-input">
           </label>
-          <label>Email
-            <input type="email" [(ngModel)]="form.email" name="email">
+          <label class="flex flex-col gap-1 text-sm text-slate-600">Fecha nacimiento *
+            <input type="date" [(ngModel)]="form.fecha_nacimiento" name="fecha_nacimiento" required class="ui-input">
           </label>
         </div>
-        <label class="full">Dirección
-          <input [(ngModel)]="form.direccion" name="direccion">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label class="flex flex-col gap-1 text-sm text-slate-600">Teléfono
+            <input [(ngModel)]="form.telefono" name="telefono" maxlength="20" class="ui-input">
+          </label>
+          <label class="flex flex-col gap-1 text-sm text-slate-600">Email
+            <input type="email" [(ngModel)]="form.email" name="email" class="ui-input">
+          </label>
+        </div>
+        <label class="flex flex-col gap-1 text-sm text-slate-600">Dirección
+          <input [(ngModel)]="form.direccion" name="direccion" class="ui-input">
         </label>
 
         @if (submitError()) {
-          <p class="err">{{ submitError() }}</p>
+          <p class="rounded-md bg-red-50 p-3 text-sm text-red-600">{{ submitError() }}</p>
         }
 
-        <div class="actions">
-          <button type="button" class="btn" (click)="toggleForm()">Cancelar</button>
-          <button type="submit" class="btn primary" [disabled]="!f.valid || submitting()">
+        <div class="flex justify-end gap-2">
+          <button type="button" (click)="toggleForm()"
+                  class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">Cancelar</button>
+          <button type="submit" [disabled]="!f.valid || submitting()"
+                  class="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white transition hover:bg-navy-light disabled:cursor-not-allowed disabled:opacity-50">
             {{ submitting() ? 'Guardando...' : 'Guardar' }}
           </button>
         </div>
       </form>
     }
 
-    <div class="search">
+    <div class="mb-3 flex items-center gap-3">
       <input type="search" [(ngModel)]="search" placeholder="Buscar por nombre o CI..."
-             (input)="onSearch()" name="search">
-      @if (loading()) { <span class="hint">cargando...</span> }
+             (input)="onSearch()" name="search" class="ui-input w-full max-w-xs">
+      @if (loading()) { <span class="text-sm text-muted">cargando...</span> }
     </div>
 
     @if (error()) {
-      <p class="err">{{ error() }}</p>
+      <p class="mb-2 rounded-md bg-red-50 p-3 text-sm text-red-600">{{ error() }}</p>
     }
 
-    <div class="table-wrap">
-      <table>
+    <div class="overflow-x-auto rounded-lg bg-white shadow-sm">
+      <table class="w-full min-w-[720px] border-collapse text-sm">
         <thead>
-          <tr>
-            <th>Nombre</th>
-            <th>CI</th>
-            <th>Teléfono</th>
-            <th>Email</th>
-            <th>Estado</th>
-            <th>Creado</th>
-            <th></th>
+          <tr class="border-b border-slate-200 bg-slate-50 text-left text-slate-600">
+            <th class="px-3 py-2 font-semibold">Nombre</th>
+            <th class="px-3 py-2 font-semibold">CI</th>
+            <th class="px-3 py-2 font-semibold">Teléfono</th>
+            <th class="px-3 py-2 font-semibold">Email</th>
+            <th class="px-3 py-2 font-semibold">Estado</th>
+            <th class="px-3 py-2 font-semibold">Creado</th>
+            <th class="px-3 py-2"></th>
           </tr>
         </thead>
         <tbody>
           @for (c of items(); track c.id) {
-            <tr>
-              <td><a [routerLink]="['/clientes', c.id]" class="name-link">{{ c.nombres }} {{ c.apellidos }}</a></td>
-              <td><code>{{ c.ci }}</code></td>
-              <td>{{ c.telefono || '—' }}</td>
-              <td>{{ c.email || '—' }}</td>
-              <td><span class="badge" [class]="'b-' + c.estado">{{ c.estado }}</span></td>
-              <td class="muted">{{ c.created_at | slice:0:10 }}</td>
-              <td><a [routerLink]="['/clientes', c.id]" class="name-link">Historial →</a></td>
+            <tr class="border-b border-slate-100 last:border-0">
+              <td class="px-3 py-2">
+                <a [routerLink]="['/clientes', c.id]" class="font-semibold text-navy-light hover:underline">{{ c.nombres }} {{ c.apellidos }}</a>
+              </td>
+              <td class="px-3 py-2"><code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{{ c.ci }}</code></td>
+              <td class="px-3 py-2">{{ c.telefono || '—' }}</td>
+              <td class="px-3 py-2">{{ c.email || '—' }}</td>
+              <td class="px-3 py-2"><span class="rounded-full px-2.5 py-0.5 text-xs font-medium" [class]="estadoBadge(c.estado)">{{ c.estado }}</span></td>
+              <td class="px-3 py-2 text-muted">{{ c.created_at | slice:0:10 }}</td>
+              <td class="px-3 py-2"><a [routerLink]="['/clientes', c.id]" class="font-semibold text-navy-light hover:underline">Historial →</a></td>
             </tr>
           } @empty {
-            <tr><td colspan="7" class="muted center">Sin clientes</td></tr>
+            <tr><td colspan="7" class="px-3 py-6 text-center text-muted">Sin clientes</td></tr>
           }
         </tbody>
       </table>
     </div>
-    <p class="hint">Mostrando {{ items().length }} de {{ total() }} clientes</p>
+    <p class="mt-2 text-sm text-muted">Mostrando {{ items().length }} de {{ total() }} clientes</p>
   `,
-  styles: [`
-    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-    h2 { margin: 0; color: #2d3748; }
-    .form-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 16px; display: flex; flex-direction: column; gap: 12px; }
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #4a5568; }
-    label.full { width: 100%; }
-    input { padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; }
-    input:focus { outline: none; border-color: #2c5282; }
-    .actions { display: flex; gap: 8px; justify-content: flex-end; }
-    .btn { padding: 8px 16px; border: 1px solid #cbd5e0; background: white; border-radius: 6px; cursor: pointer; font-size: 14px; }
-    .btn.primary { background: #1a365d; color: white; border-color: #1a365d; }
-    .btn.primary:disabled { background: #a0aec0; border-color: #a0aec0; cursor: not-allowed; }
-    .search { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-    .search input { flex: 1; max-width: 320px; }
-    .table-wrap { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow: hidden; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 10px 14px; text-align: left; font-size: 14px; }
-    th { background: #f7fafc; color: #4a5568; font-weight: 600; border-bottom: 1px solid #e2e8f0; }
-    td { border-bottom: 1px solid #edf2f7; }
-    tr:last-child td { border-bottom: none; }
-    code { background: #edf2f7; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
-    .name-link { color: #2c5282; text-decoration: none; font-weight: 600; }
-    .name-link:hover { text-decoration: underline; }
-    .badge { padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
-    .b-activo { background: #c6f6d5; color: #22543d; }
-    .b-inactivo { background: #e2e8f0; color: #4a5568; }
-    .b-bloqueado { background: #fed7d7; color: #742a2a; }
-    .muted { color: #718096; }
-    .center { text-align: center; }
-    .hint { color: #718096; font-size: 13px; margin-top: 8px; }
-    .err { color: #c53030; background: #fff5f5; padding: 10px; border-radius: 6px; margin: 8px 0; }
-  `],
 })
 export class Clientes implements OnInit {
   private svc = inject(ClienteService);
@@ -148,6 +121,14 @@ export class Clientes implements OnInit {
   form: CreateClienteInput = this.emptyForm();
   search = '';
   private searchTimer: any;
+
+  estadoBadge(estado: string): string {
+    switch (estado) {
+      case 'activo': return 'bg-green-100 text-green-800';
+      case 'bloqueado': return 'bg-red-100 text-red-800';
+      default: return 'bg-slate-200 text-slate-600';
+    }
+  }
 
   ngOnInit() {
     this.load();

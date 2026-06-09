@@ -10,70 +10,69 @@ import { PaymentService, Pago } from '../../core/services/payment.service';
   selector: 'app-cliente-detail',
   imports: [CommonModule, CurrencyPipe, RouterLink],
   template: `
-    <a routerLink="/clientes" class="back">← Clientes</a>
+    <a routerLink="/clientes" class="text-sm text-navy-light hover:underline">← Clientes</a>
 
-    @if (loading()) { <p class="hint">Cargando historial...</p> }
-    @if (error()) { <p class="err">{{ error() }}</p> }
+    @if (loading()) { <p class="mt-3 text-muted">Cargando historial...</p> }
+    @if (error()) { <p class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-600">{{ error() }}</p> }
 
     @if (perfil(); as p) {
-      <header class="head">
+      <header class="mb-4 mt-3 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2>{{ p.cliente?.nombres }} {{ p.cliente?.apellidos }}</h2>
-          <p class="sub">
+          <h2 class="my-1 text-xl font-semibold text-ink">{{ p.cliente?.nombres }} {{ p.cliente?.apellidos }}</h2>
+          <p class="m-0 text-sm text-muted">
             CI {{ p.cliente?.ci }}
             @if (p.cliente?.telefono) { · {{ p.cliente?.telefono }} }
             @if (p.cliente?.email) { · {{ p.cliente?.email }} }
-            · <span class="badge" [class]="'st-' + (p.cliente?.estado || '')">{{ p.cliente?.estado }}</span>
+            · <span class="rounded-full px-2.5 py-0.5 text-xs font-medium capitalize" [class]="badge(p.cliente?.estado || '')">{{ p.cliente?.estado }}</span>
           </p>
         </div>
         <!-- Veredicto de elegibilidad para un nuevo préstamo (regla §7). -->
-        <div class="elig" [class.ok]="p.elegible_nuevo_prestamo" [class.no]="!p.elegible_nuevo_prestamo">
-          @if (p.elegible_nuevo_prestamo) {
-            <span class="dot"></span> Elegible para nuevo préstamo
-          } @else {
-            <span class="dot"></span> No elegible — {{ p.motivo_inelegible }}
-          }
+        <div class="flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold"
+             [class]="p.elegible_nuevo_prestamo ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'">
+          <span class="inline-block h-2 w-2 rounded-full" [class]="p.elegible_nuevo_prestamo ? 'bg-green-600' : 'bg-amber-500'"></span>
+          @if (p.elegible_nuevo_prestamo) { Elegible para nuevo préstamo }
+          @else { No elegible — {{ p.motivo_inelegible }} }
         </div>
       </header>
 
       <!-- Resumen crediticio -->
-      <div class="cards">
-        <div class="kpi"><span>Préstamos</span><b>{{ p.num_prestamos }}</b></div>
-        <div class="kpi"><span>Activos</span><b>{{ p.prestamos_activos }}</b></div>
-        <div class="kpi"><span>Total prestado</span><b>{{ p.total_prestado | currency:'BOB':'symbol-narrow':'1.2-2' }}</b></div>
-        <div class="kpi"><span>Total pagado</span><b class="money">{{ p.total_pagado | currency:'BOB':'symbol-narrow':'1.2-2' }}</b></div>
-        <div class="kpi"><span>Saldo total</span><b>{{ p.saldo_total | currency:'BOB':'symbol-narrow':'1.2-2' }}</b></div>
-        <div class="kpi"><span>Mora total</span><b [class.danger]="p.mora_total > 0">{{ p.mora_total | currency:'BOB':'symbol-narrow':'1.2-2' }}</b></div>
-        <div class="kpi"><span>Cuotas vencidas</span><b [class.danger]="p.cuotas_vencidas > 0">{{ p.cuotas_vencidas }}</b></div>
+      <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+        <div class="flex flex-col gap-1 rounded-lg bg-white p-3.5 shadow-sm"><span class="text-xs text-muted">Préstamos</span><b class="text-lg text-ink">{{ p.num_prestamos }}</b></div>
+        <div class="flex flex-col gap-1 rounded-lg bg-white p-3.5 shadow-sm"><span class="text-xs text-muted">Activos</span><b class="text-lg text-ink">{{ p.prestamos_activos }}</b></div>
+        <div class="flex flex-col gap-1 rounded-lg bg-white p-3.5 shadow-sm"><span class="text-xs text-muted">Total prestado</span><b class="text-lg text-ink">{{ p.total_prestado | currency:'BOB':'symbol-narrow':'1.2-2' }}</b></div>
+        <div class="flex flex-col gap-1 rounded-lg bg-white p-3.5 shadow-sm"><span class="text-xs text-muted">Total pagado</span><b class="text-lg text-green-700">{{ p.total_pagado | currency:'BOB':'symbol-narrow':'1.2-2' }}</b></div>
+        <div class="flex flex-col gap-1 rounded-lg bg-white p-3.5 shadow-sm"><span class="text-xs text-muted">Saldo total</span><b class="text-lg text-ink">{{ p.saldo_total | currency:'BOB':'symbol-narrow':'1.2-2' }}</b></div>
+        <div class="flex flex-col gap-1 rounded-lg bg-white p-3.5 shadow-sm"><span class="text-xs text-muted">Mora total</span><b class="text-lg" [class]="p.mora_total > 0 ? 'text-red-600' : 'text-ink'">{{ p.mora_total | currency:'BOB':'symbol-narrow':'1.2-2' }}</b></div>
+        <div class="flex flex-col gap-1 rounded-lg bg-white p-3.5 shadow-sm"><span class="text-xs text-muted">Cuotas vencidas</span><b class="text-lg" [class]="p.cuotas_vencidas > 0 ? 'text-red-600' : 'text-ink'">{{ p.cuotas_vencidas }}</b></div>
       </div>
 
       <!-- Préstamos del cliente -->
-      <section class="card">
-        <h3>Préstamos</h3>
-        <div class="table-wrap">
-          <table>
+      <section class="mb-4 rounded-lg bg-white p-4 shadow-sm">
+        <h3 class="mb-3 text-base font-semibold text-ink">Préstamos</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[760px] border-collapse text-sm">
             <thead>
-              <tr>
-                <th>Préstamo</th><th>Estado</th><th class="r">Monto</th>
-                <th class="c">Cuotas</th><th class="c">Vencidas</th>
-                <th class="r">Saldo</th><th class="r">Pagado</th><th>Solicitud</th><th></th>
+              <tr class="border-b border-slate-200 bg-slate-50 text-left text-slate-600">
+                <th class="px-3 py-2 font-semibold">Préstamo</th><th class="px-3 py-2 font-semibold">Estado</th><th class="px-3 py-2 text-right font-semibold">Monto</th>
+                <th class="px-3 py-2 text-center font-semibold">Cuotas</th><th class="px-3 py-2 text-center font-semibold">Vencidas</th>
+                <th class="px-3 py-2 text-right font-semibold">Saldo</th><th class="px-3 py-2 text-right font-semibold">Pagado</th><th class="px-3 py-2 font-semibold">Solicitud</th><th class="px-3 py-2"></th>
               </tr>
             </thead>
             <tbody>
               @for (l of p.prestamos; track l.id) {
-                <tr>
-                  <td><code>{{ l.id | slice:0:8 }}</code></td>
-                  <td><span class="badge" [class]="'st-' + l.estado">{{ l.estado }}</span></td>
-                  <td class="r">{{ l.monto_aprobado | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
-                  <td class="c">{{ l.cuotas_pagadas }}/{{ l.num_cuotas }}</td>
-                  <td class="c" [class.danger]="l.cuotas_vencidas > 0">{{ l.cuotas_vencidas }}</td>
-                  <td class="r">{{ l.saldo_pendiente | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
-                  <td class="r money">{{ l.total_pagado | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
-                  <td class="muted">{{ l.fecha_solicitud | slice:0:10 }}</td>
-                  <td><a [routerLink]="['/prestamos', l.id]" class="link">ver</a></td>
+                <tr class="border-b border-slate-100 last:border-0">
+                  <td class="px-3 py-2"><code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{{ l.id | slice:0:8 }}</code></td>
+                  <td class="px-3 py-2"><span class="rounded-full px-2.5 py-0.5 text-xs font-medium capitalize" [class]="badge(l.estado)">{{ l.estado }}</span></td>
+                  <td class="px-3 py-2 text-right">{{ l.monto_aprobado | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
+                  <td class="px-3 py-2 text-center">{{ l.cuotas_pagadas }}/{{ l.num_cuotas }}</td>
+                  <td class="px-3 py-2 text-center" [class.text-red-600]="l.cuotas_vencidas > 0" [class.font-bold]="l.cuotas_vencidas > 0">{{ l.cuotas_vencidas }}</td>
+                  <td class="px-3 py-2 text-right">{{ l.saldo_pendiente | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
+                  <td class="px-3 py-2 text-right text-green-700">{{ l.total_pagado | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
+                  <td class="px-3 py-2 text-muted">{{ l.fecha_solicitud | slice:0:10 }}</td>
+                  <td class="px-3 py-2"><a [routerLink]="['/prestamos', l.id]" class="text-navy-light hover:underline">ver</a></td>
                 </tr>
               } @empty {
-                <tr><td colspan="9" class="muted center">Sin préstamos</td></tr>
+                <tr><td colspan="9" class="px-3 py-6 text-center text-muted">Sin préstamos</td></tr>
               }
             </tbody>
           </table>
@@ -81,34 +80,34 @@ import { PaymentService, Pago } from '../../core/services/payment.service';
       </section>
 
       <!-- Historial de pagos -->
-      <section class="card">
-        <h3>Historial de pagos <span class="hint">({{ pagos().length }})</span></h3>
-        <div class="table-wrap">
-          <table>
+      <section class="mb-4 rounded-lg bg-white p-4 shadow-sm">
+        <h3 class="mb-3 text-base font-semibold text-ink">Historial de pagos <span class="text-sm font-normal text-muted">({{ pagos().length }})</span></h3>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[720px] border-collapse text-sm">
             <thead>
-              <tr>
-                <th>Recibo</th><th>Fecha</th><th class="r">Monto</th>
-                <th class="r">Capital</th><th class="r">Interés</th><th class="r">Mora</th>
-                <th>Método</th><th>Estado</th>
+              <tr class="border-b border-slate-200 bg-slate-50 text-left text-slate-600">
+                <th class="px-3 py-2 font-semibold">Recibo</th><th class="px-3 py-2 font-semibold">Fecha</th><th class="px-3 py-2 text-right font-semibold">Monto</th>
+                <th class="px-3 py-2 text-right font-semibold">Capital</th><th class="px-3 py-2 text-right font-semibold">Interés</th><th class="px-3 py-2 text-right font-semibold">Mora</th>
+                <th class="px-3 py-2 font-semibold">Método</th><th class="px-3 py-2 font-semibold">Estado</th>
               </tr>
             </thead>
             <tbody>
               @for (pg of pagos(); track pg.id) {
-                <tr [class.anulado]="pg.anulado">
-                  <td><b>{{ pg.numero_recibo }}</b></td>
-                  <td class="muted">{{ pg.fecha_pago | slice:0:10 }}</td>
-                  <td class="r"><b>{{ pg.monto_pagado | currency:'BOB':'symbol-narrow':'1.2-2' }}</b></td>
-                  <td class="r">{{ pg.capital_pagado | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
-                  <td class="r">{{ pg.interes_pagado | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
-                  <td class="r">{{ pg.mora_pagada | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
-                  <td>{{ pg.metodo_pago }}</td>
-                  <td>
-                    @if (pg.anulado) { <span class="badge st-anulado">anulado</span> }
-                    @else { <span class="badge st-activo">{{ pg.tipo }}</span> }
+                <tr class="border-b border-slate-100 last:border-0" [class.opacity-55]="pg.anulado">
+                  <td class="px-3 py-2 font-semibold">{{ pg.numero_recibo }}</td>
+                  <td class="px-3 py-2 text-muted">{{ pg.fecha_pago | slice:0:10 }}</td>
+                  <td class="px-3 py-2 text-right font-semibold">{{ pg.monto_pagado | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
+                  <td class="px-3 py-2 text-right">{{ pg.capital_pagado | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
+                  <td class="px-3 py-2 text-right">{{ pg.interes_pagado | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
+                  <td class="px-3 py-2 text-right">{{ pg.mora_pagada | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
+                  <td class="px-3 py-2 capitalize">{{ pg.metodo_pago }}</td>
+                  <td class="px-3 py-2">
+                    @if (pg.anulado) { <span class="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800">anulado</span> }
+                    @else { <span class="rounded-full px-2.5 py-0.5 text-xs font-medium capitalize" [class]="badge(pg.tipo)">{{ pg.tipo }}</span> }
                   </td>
                 </tr>
               } @empty {
-                <tr><td colspan="8" class="muted center">Sin pagos registrados</td></tr>
+                <tr><td colspan="8" class="px-3 py-6 text-center text-muted">Sin pagos registrados</td></tr>
               }
             </tbody>
           </table>
@@ -116,42 +115,6 @@ import { PaymentService, Pago } from '../../core/services/payment.service';
       </section>
     }
   `,
-  styles: [`
-    .back { color: #2c5282; text-decoration: none; font-size: 13px; }
-    .back:hover { text-decoration: underline; }
-    .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin: 12px 0 16px; flex-wrap: wrap; }
-    h2 { color: #2d3748; margin: 4px 0; }
-    h3 { color: #2d3748; font-size: 15px; margin: 0 0 12px; }
-    .sub { color: #718096; font-size: 13px; margin: 0; }
-    .elig { padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-    .elig .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-    .elig.ok { background: #c6f6d5; color: #22543d; } .elig.ok .dot { background: #38a169; }
-    .elig.no { background: #fefcbf; color: #744210; } .elig.no .dot { background: #d69e2e; }
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
-    .kpi { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
-    .kpi span { color: #718096; font-size: 12px; } .kpi b { font-size: 18px; color: #2d3748; }
-    .card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 16px; margin-bottom: 16px; }
-    .table-wrap { overflow: hidden; border-radius: 6px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { padding: 8px 12px; text-align: left; }
-    th { background: #f7fafc; color: #4a5568; font-weight: 600; border-bottom: 1px solid #e2e8f0; }
-    td { border-bottom: 1px solid #edf2f7; }
-    .r { text-align: right; } .c { text-align: center; }
-    .money { color: #2f855a; } .danger { color: #c53030; font-weight: 700; }
-    code { background: #edf2f7; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
-    .link { color: #2c5282; text-decoration: none; } .link:hover { text-decoration: underline; }
-    .badge { padding: 2px 10px; border-radius: 12px; font-size: 12px; text-transform: capitalize; }
-    .st-activo { background: #c6f6d5; color: #22543d; }
-    .st-mora, .st-anulado, .st-bloqueado { background: #fed7d7; color: #822727; }
-    .st-finalizado { background: #e2e8f0; color: #2d3748; }
-    .st-pendiente, .st-inactivo { background: #feebc8; color: #7b341e; }
-    .st-rechazado { background: #fed7d7; color: #822727; }
-    tr.anulado { opacity: 0.55; }
-    tr.anulado td:not(:last-child) { text-decoration: line-through; }
-    .muted { color: #718096; } .center { text-align: center; }
-    .hint { color: #718096; font-size: 13px; font-weight: 400; }
-    .err { color: #c53030; background: #fff5f5; padding: 10px; border-radius: 6px; }
-  `],
 })
 export class ClienteDetail implements OnInit {
   private route = inject(ActivatedRoute);
@@ -164,6 +127,30 @@ export class ClienteDetail implements OnInit {
   pagos = signal<Pago[]>([]);
   loading = signal(false);
   error = signal<string | null>(null);
+
+  // Color de badge por estado (cliente, préstamo, cuota o tipo de pago).
+  badge(estado: string): string {
+    switch (estado) {
+      case 'activo':
+      case 'pagada':
+      case 'total':
+        return 'bg-green-100 text-green-800';
+      case 'mora':
+      case 'anulado':
+      case 'bloqueado':
+      case 'rechazado':
+      case 'vencida':
+        return 'bg-red-100 text-red-800';
+      case 'finalizado':
+        return 'bg-slate-200 text-slate-700';
+      case 'pendiente':
+      case 'inactivo':
+      case 'parcial':
+        return 'bg-orange-100 text-orange-800';
+      default:
+        return 'bg-slate-200 text-slate-600';
+    }
+  }
 
   ngOnInit() {
     const id = this.route.snapshot.paramMap.get('id');
