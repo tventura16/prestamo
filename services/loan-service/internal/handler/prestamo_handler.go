@@ -155,7 +155,8 @@ func respondRepoError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, repository.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-	case errors.Is(err, repository.ErrAlreadyDecided), errors.Is(err, repository.ErrInvalidState):
+	case errors.Is(err, repository.ErrAlreadyDecided), errors.Is(err, repository.ErrInvalidState),
+		errors.Is(err, repository.ErrClienteConMora):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
