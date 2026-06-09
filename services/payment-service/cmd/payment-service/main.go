@@ -101,7 +101,7 @@ func main() {
 	loanRepo := repository.NewLoanRepository(prestamosPool)
 	outboxRepo := repository.NewOutboxRepository(pagosPool)
 	paymentSvc := service.NewPaymentService(pagoRepo, loanRepo, logger)
-	pagoHandler := handler.NewPagoHandler(paymentSvc, pagoRepo)
+	pagoHandler := handler.NewPagoHandler(paymentSvc, pagoRepo, verifier)
 
 	// ───── Mensajería: outbox relay + consumer ─────
 	var publisher *messaging.Publisher

@@ -109,7 +109,7 @@ func main() {
 	clientesRepo := repository.NewClientesRepository(clientesPool)
 
 	reportSvc := service.NewReportService(pagosRepo, prestamosRepo, clientesRepo)
-	reportHandler := handler.NewReportHandler(reportSvc)
+	reportHandler := handler.NewReportHandler(reportSvc, verifier)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()

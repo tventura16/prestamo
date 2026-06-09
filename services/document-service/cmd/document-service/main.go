@@ -124,7 +124,7 @@ func main() {
 	pagoRepo := repository.NewPagoRepository(pagosPool)
 
 	documentSvc := service.NewDocumentService(docRepo, clienteRepo, prestamoRepo, pagoRepo, cfg.DocumentStorePath)
-	docHandler := handler.NewDocumentoHandler(documentSvc, docRepo)
+	docHandler := handler.NewDocumentoHandler(documentSvc, docRepo, verifier)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()

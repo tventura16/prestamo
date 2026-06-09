@@ -9,25 +9,30 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/prestamos/payment-service/internal/auth"
 	"github.com/prestamos/payment-service/internal/models"
 	"github.com/prestamos/payment-service/internal/repository"
 	"github.com/prestamos/payment-service/internal/service"
 )
 
 type PagoHandler struct {
-	svc  *service.PaymentService
-	repo *repository.PagoRepository
+	svc      *service.PaymentService
+	repo     *repository.PagoRepository
+	verifier *auth.Verifier
 }
 
-func NewPagoHandler(svc *service.PaymentService, repo *repository.PagoRepository) *PagoHandler {
-	return &PagoHandler{svc: svc, repo: repo}
+func NewPagoHandler(svc *service.PaymentService, repo *repository.PagoRepository, verifier *auth.Verifier) *PagoHandler {
+	return &PagoHandler{svc: svc, repo: repo, verifier: verifier}
 }
 
+// Register monta las rutas de pagos con autorización por rol (alcance §4):
+// el registro de pagos es operación de caja (cajero); la consulta de pagos y
+// recibos queda abierta a cualquier rol autenticado.
 func (h *PagoHandler) Register(rg *gin.RouterGroup) {
-	rg.GET("", h.List)
-	rg.POST("", h.Create)
-	rg.GET("/:id", h.Get)
-	rg.GET("/:id/receipt", h.Receipt)
+	rg.GET("", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.List)
+	rg.POST("", h.verifier.GuardRole("admin", "cajero"), h.Create)
+	rg.GET("/:id", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.Get)
+	rg.GET("/:id/receipt", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.Receipt)
 }
 
 func (h *PagoHandler) Create(c *gin.Context) {

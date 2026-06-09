@@ -10,28 +10,33 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/prestamos/document-service/internal/auth"
 	"github.com/prestamos/document-service/internal/models"
 	"github.com/prestamos/document-service/internal/repository"
 	"github.com/prestamos/document-service/internal/service"
 )
 
 type DocumentoHandler struct {
-	svc  *service.DocumentService
-	repo *repository.DocumentoRepository
+	svc      *service.DocumentService
+	repo     *repository.DocumentoRepository
+	verifier *auth.Verifier
 }
 
-func NewDocumentoHandler(svc *service.DocumentService, repo *repository.DocumentoRepository) *DocumentoHandler {
-	return &DocumentoHandler{svc: svc, repo: repo}
+func NewDocumentoHandler(svc *service.DocumentService, repo *repository.DocumentoRepository, verifier *auth.Verifier) *DocumentoHandler {
+	return &DocumentoHandler{svc: svc, repo: repo, verifier: verifier}
 }
 
+// Register monta las rutas de documentos con autorización por rol (alcance §4):
+// consulta/descarga abierta a cualquier rol; el contrato y el plan acompañan la
+// aprobación (supervisor); el recibo es operación de caja (cajero).
 func (h *DocumentoHandler) Register(rg *gin.RouterGroup) {
-	rg.GET("", h.List)
-	rg.GET("/:id", h.Get)
-	rg.GET("/:id/download", h.Download)
-	rg.POST("/contract", h.Contract)
-	rg.POST("/plan", h.Plan)
-	rg.POST("/receipt", h.Receipt)
-	rg.POST("/statement", h.Statement)
+	rg.GET("", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.List)
+	rg.GET("/:id", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.Get)
+	rg.GET("/:id/download", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.Download)
+	rg.POST("/contract", h.verifier.GuardRole("admin", "supervisor"), h.Contract)
+	rg.POST("/plan", h.verifier.GuardRole("admin", "supervisor"), h.Plan)
+	rg.POST("/receipt", h.verifier.GuardRole("admin", "cajero"), h.Receipt)
+	rg.POST("/statement", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.Statement)
 }
 
 func (h *DocumentoHandler) Contract(c *gin.Context) {

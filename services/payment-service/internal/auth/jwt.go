@@ -104,3 +104,13 @@ func RequireRole(roles ...string) gin.HandlerFunc {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "insufficient role"})
 	}
 }
+
+// GuardRole devuelve un middleware de control de rol nil-safe. Cuando el
+// verifier es nil (AUTH_ENABLED=false en desarrollo) actúa como passthrough,
+// de modo que declarar guards por endpoint no rompe el modo sin autenticación.
+func (v *Verifier) GuardRole(roles ...string) gin.HandlerFunc {
+	if v == nil {
+		return func(c *gin.Context) { c.Next() }
+	}
+	return RequireRole(roles...)
+}

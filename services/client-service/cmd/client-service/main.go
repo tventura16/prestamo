@@ -87,7 +87,7 @@ func main() {
 	}
 
 	repo := repository.NewClienteRepository(pool)
-	clienteHandler := handler.NewClienteHandler(repo)
+	clienteHandler := handler.NewClienteHandler(repo, verifier)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()

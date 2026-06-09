@@ -9,23 +9,28 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/prestamos/report-service/internal/auth"
 	"github.com/prestamos/report-service/internal/service"
 )
 
 type ReportHandler struct {
-	svc *service.ReportService
+	svc      *service.ReportService
+	verifier *auth.Verifier
 }
 
-func NewReportHandler(svc *service.ReportService) *ReportHandler {
-	return &ReportHandler{svc: svc}
+func NewReportHandler(svc *service.ReportService, verifier *auth.Verifier) *ReportHandler {
+	return &ReportHandler{svc: svc, verifier: verifier}
 }
 
+// Register monta las rutas de reportes con autorización por rol (alcance §4):
+// la reportería financiera y operativa es competencia de supervisor/admin.
 func (h *ReportHandler) Register(rg *gin.RouterGroup) {
-	rg.GET("/dashboard", h.Dashboard)
-	rg.GET("/daily", h.Daily)
-	rg.GET("/monthly", h.Monthly)
-	rg.GET("/overdue", h.Overdue)
-	rg.GET("/clients/:id", h.PorCliente)
+	reportes := h.verifier.GuardRole("admin", "supervisor")
+	rg.GET("/dashboard", reportes, h.Dashboard)
+	rg.GET("/daily", reportes, h.Daily)
+	rg.GET("/monthly", reportes, h.Monthly)
+	rg.GET("/overdue", reportes, h.Overdue)
+	rg.GET("/clients/:id", reportes, h.PorCliente)
 }
 
 func (h *ReportHandler) Dashboard(c *gin.Context) {
