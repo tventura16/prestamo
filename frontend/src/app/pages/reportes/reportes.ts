@@ -92,7 +92,7 @@ type ReportPath = 'daily' | 'monthly' | 'overdue';
                 <td class="px-3 py-2 text-muted">{{ c.fecha_vencimiento | slice:0:10 }}</td>
                 <td class="px-3 py-2 text-right" [class.text-red-600]="c.dias_vencidos > 30" [class.font-bold]="c.dias_vencidos > 30">{{ c.dias_vencidos }}</td>
                 <td class="px-3 py-2 text-right">{{ c.saldo_pendiente | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
-                <td class="px-3 py-2 text-right font-semibold text-green-700">{{ c.mora_acumulada | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
+                <td class="px-3 py-2 text-right font-semibold" [class]="c.mora_acumulada > 0 ? 'text-red-600' : 'text-muted'">{{ c.mora_acumulada | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
                 <td class="px-3 py-2"><span class="rounded-full px-2.5 py-0.5 text-xs font-medium capitalize" [class]="badge(c.estado)">{{ c.estado }}</span></td>
               </tr>
             } @empty {
