@@ -1,0 +1,304 @@
+openapi: 3.1.0
+info:
+  title: Loan Service API
+  version: 1.0.0
+  description: |
+    Gestión del ciclo de vida de préstamos: solicitud, aprobación con
+    generación del plan de pagos (cuotas), rechazo y consulta del cronograma.
+    La aprobación valida que el cliente no tenga mora antes de desembolsar.
+  contact:
+    name: Sistema de Préstamos
+
+servers:
+  - url: /
+    description: Acceso directo al servicio (vía API Gateway, mismo path bajo Kong)
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Préstamos
+    description: Solicitud, aprobación, rechazo y consulta de préstamos
+
+paths:
+  /loans:
+    get:
+      tags: [Préstamos]
+      summary: Listar préstamos
+      description: Lista paginada de préstamos con filtros opcionales por cliente y estado.
+      operationId: listLoans
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 20 } }
+        - { name: cliente_id, in: query, schema: { type: string, format: uuid } }
+        - name: estado
+          in: query
+          schema: { $ref: '#/components/schemas/Estado' }
+      responses:
+        '200':
+          description: Página de préstamos
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ListResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      security:
+        - bearerAuth: [admin, supervisor, cajero]
+    post:
+      tags: [Préstamos]
+      summary: Crear solicitud de préstamo
+      description: |
+        Registra una solicitud de préstamo en estado `pendiente`. El plan de
+        pagos no se genera aún: se construye al aprobar.
+      operationId: createLoan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePrestamoInput' }
+      responses:
+        '201':
+          description: Solicitud creada (estado pendiente)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Prestamo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      security:
+        - bearerAuth: [admin, cajero]
+
+  /loans/{id}:
+    get:
+      tags: [Préstamos]
+      summary: Obtener préstamo
+      operationId: getLoan
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Préstamo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Prestamo' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      security:
+        - bearerAuth: [admin, supervisor, cajero]
+
+  /loans/{id}/approve:
+    post:
+      tags: [Préstamos]
+      summary: Aprobar y desembolsar préstamo
+      description: |
+        Aprueba un préstamo `pendiente`, lo desembolsa y genera el plan de
+        pagos (cuotas). Rechaza con 409 si el préstamo ya fue decidido
+        (aprobado/rechazado) o si el cliente tiene mora vigente.
+      operationId: approveLoan
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApprovePrestamoInput' }
+      responses:
+        '200':
+          description: Préstamo aprobado con su plan de pagos generado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApproveResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: El préstamo ya fue decidido, o el cliente tiene mora vigente
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+      security:
+        - bearerAuth: [admin, supervisor]
+
+  /loans/{id}/reject:
+    post:
+      tags: [Préstamos]
+      summary: Rechazar préstamo
+      description: |
+        Rechaza un préstamo `pendiente`. Rechaza con 409 si ya fue decidido.
+      operationId: rejectLoan
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RejectPrestamoInput' }
+      responses:
+        '200':
+          description: Préstamo rechazado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Prestamo' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: El préstamo ya fue decidido
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+      security:
+        - bearerAuth: [admin, supervisor]
+
+  /loans/{id}/schedule:
+    get:
+      tags: [Préstamos]
+      summary: Cronograma de cuotas
+      description: Devuelve el plan de pagos (cuotas) del préstamo.
+      operationId: getLoanSchedule
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Plan de pagos del préstamo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduleResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      security:
+        - bearerAuth: [admin, supervisor, cajero]
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT emitido por Keycloak (realm `prestamos`). Los roles del realm gobiernan el acceso por endpoint.
+
+  responses:
+    BadRequest:
+      description: Solicitud inválida
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized:
+      description: Falta token o es inválido
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: El rol no autoriza la operación
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Recurso no encontrado
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string, examples: ["el cliente tiene cuotas en mora"] }
+      required: [error]
+
+    Estado:
+      type: string
+      enum: [pendiente, aprobado, rechazado, activo, finalizado, mora]
+
+    TipoInteres:
+      type: string
+      enum: [fijo, variable]
+
+    Frecuencia:
+      type: string
+      enum: [diaria, semanal, quincenal, mensual]
+
+    EstadoCuota:
+      type: string
+      enum: [pendiente, pagada, parcial, vencida]
+
+    CreatePrestamoInput:
+      type: object
+      required: [cliente_id, monto_solicitado, tasa_interes, num_cuotas, frecuencia]
+      properties:
+        cliente_id: { type: string, format: uuid }
+        monto_solicitado: { type: number, format: double, exclusiveMinimum: 0 }
+        tasa_interes: { type: number, format: double, minimum: 0, description: Tasa de interés (p. ej. 0.025 = 2.5%) }
+        tipo_interes: { $ref: '#/components/schemas/TipoInteres' }
+        num_cuotas: { type: integer, minimum: 1, maximum: 600 }
+        frecuencia: { $ref: '#/components/schemas/Frecuencia' }
+        observaciones: { type: [string, 'null'] }
+
+    ApprovePrestamoInput:
+      type: object
+      required: [aprobado_por]
+      properties:
+        aprobado_por: { type: string, format: uuid, description: Usuario que aprueba }
+        monto_aprobado: { type: [number, 'null'], format: double, exclusiveMinimum: 0, description: Si se omite, se usa el monto solicitado }
+        fecha_desembolso: { type: [string, 'null'], format: date, description: "Fecha de desembolso (YYYY-MM-DD)" }
+        observaciones: { type: [string, 'null'] }
+
+    RejectPrestamoInput:
+      type: object
+      required: [aprobado_por, observaciones]
+      properties:
+        aprobado_por: { type: string, format: uuid, description: Usuario que rechaza }
+        observaciones: { type: string, minLength: 1, description: Motivo del rechazo }
+
+    Prestamo:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        cliente_id: { type: string, format: uuid }
+        monto_solicitado: { type: number, format: double }
+        monto_aprobado: { type: [number, 'null'], format: double }
+        tasa_interes: { type: number, format: double }
+        tipo_interes: { $ref: '#/components/schemas/TipoInteres' }
+        fecha_solicitud: { type: string, format: date-time }
+        fecha_desembolso: { type: [string, 'null'], format: date-time }
+        num_cuotas: { type: integer }
+        frecuencia: { $ref: '#/components/schemas/Frecuencia' }
+        estado: { $ref: '#/components/schemas/Estado' }
+        aprobado_por: { type: [string, 'null'], format: uuid }
+        observaciones: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    Cuota:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        prestamo_id: { type: string, format: uuid }
+        numero: { type: integer }
+        fecha_vencimiento: { type: string, format: date-time }
+        capital: { type: number, format: double }
+        interes: { type: number, format: double }
+        total: { type: number, format: double }
+        saldo_pendiente: { type: number, format: double }
+        mora_acumulada: { type: number, format: double }
+        estado: { $ref: '#/components/schemas/EstadoCuota' }
+        fecha_pago: { type: [string, 'null'], format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ApproveResult:
+      type: object
+      properties:
+        prestamo: { $ref: '#/components/schemas/Prestamo' }
+        cuotas:
+          type: array
+          items: { $ref: '#/components/schemas/Cuota' }
+
+    ScheduleResult:
+      type: object
+      properties:
+        cuotas:
+          type: array
+          items: { $ref: '#/components/schemas/Cuota' }
+
+    ListResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Prestamo' }
+        total: { type: integer, format: int64 }
+        page: { type: integer }
+        limit: { type: integer }

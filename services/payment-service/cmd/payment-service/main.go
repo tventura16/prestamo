@@ -18,6 +18,7 @@ import (
 	"github.com/prestamos/payment-service/internal/config"
 	"github.com/prestamos/payment-service/internal/consumer"
 	"github.com/prestamos/payment-service/internal/db"
+	"github.com/prestamos/payment-service/internal/docs"
 	"github.com/prestamos/payment-service/internal/handler"
 	"github.com/prestamos/payment-service/internal/messaging"
 	"github.com/prestamos/payment-service/internal/outbox"
@@ -152,6 +153,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	docs.Register(r) // /docs (Swagger UI) y /openapi.yaml, públicos
 
 	api := r.Group("")
 	if verifier != nil {

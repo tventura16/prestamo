@@ -17,6 +17,7 @@ import (
 	"github.com/prestamos/loan-service/internal/auth"
 	"github.com/prestamos/loan-service/internal/config"
 	"github.com/prestamos/loan-service/internal/db"
+	"github.com/prestamos/loan-service/internal/docs"
 	"github.com/prestamos/loan-service/internal/handler"
 	"github.com/prestamos/loan-service/internal/mora"
 	"github.com/prestamos/loan-service/internal/repository"
@@ -108,6 +109,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	docs.Register(r) // /docs (Swagger UI) y /openapi.yaml, públicos
 
 	api := r.Group("")
 	if verifier != nil {

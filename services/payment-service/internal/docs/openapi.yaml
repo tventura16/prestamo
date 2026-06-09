@@ -1,0 +1,308 @@
+openapi: 3.1.0
+info:
+  title: Payment Service API
+  version: 1.0.0
+  description: |
+    Registro y anulación de pagos de cuotas. Garantiza idempotencia en el
+    registro (header `Idempotency-Key`), outbox transaccional hacia Kafka y
+    reversión compensatoria en la anulación.
+  contact:
+    name: Sistema de Préstamos
+
+servers:
+  - url: /
+    description: Acceso directo al servicio (vía API Gateway, mismo path bajo Kong)
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Pagos
+    description: Operaciones de caja sobre cuotas
+
+paths:
+  /payments:
+    get:
+      tags: [Pagos]
+      summary: Listar pagos
+      description: Lista paginada de pagos con filtros opcionales.
+      operationId: listPayments
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 20 } }
+        - { name: prestamo_id, in: query, schema: { type: string, format: uuid } }
+        - { name: cuota_id, in: query, schema: { type: string, format: uuid } }
+        - { name: cliente_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Página de pagos
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ListResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      security:
+        - bearerAuth: [admin, supervisor, cajero]
+    post:
+      tags: [Pagos]
+      summary: Registrar pago
+      description: |
+        Registra un pago sobre una cuota. La distribución se aplica en orden
+        mora → interés → capital. Es idempotente: reenviar con el mismo
+        `Idempotency-Key` devuelve la respuesta original (200) sin recobrar.
+      operationId: createPayment
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Clave estable por intento de pago; evita doble cobro en reintentos.
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePagoInput' }
+      responses:
+        '201':
+          description: Pago registrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PagoResult' }
+        '200':
+          description: Reproducción idempotente de un pago ya registrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PagoResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: La cuota ya está pagada
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '422':
+          description: El monto excede lo adeudado en la cuota
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+      security:
+        - bearerAuth: [admin, cajero]
+
+  /payments/{id}:
+    get:
+      tags: [Pagos]
+      summary: Obtener pago
+      operationId: getPayment
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Pago con sus movimientos contables
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pago: { $ref: '#/components/schemas/Pago' }
+                  movimientos:
+                    type: array
+                    items: { $ref: '#/components/schemas/Movimiento' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      security:
+        - bearerAuth: [admin, supervisor, cajero]
+
+  /payments/{id}/receipt:
+    get:
+      tags: [Pagos]
+      summary: Recibo del pago
+      operationId: getReceipt
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Datos del recibo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Recibo' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      security:
+        - bearerAuth: [admin, supervisor, cajero]
+
+  /payments/{id}/void:
+    post:
+      tags: [Pagos]
+      summary: Anular pago
+      description: |
+        Anula un pago sin borrarlo (auditoría inmutable) y revierte de forma
+        compensatoria su aplicación a la cuota. Idempotente vía el ledger de
+        aplicaciones. Reservado a supervisor/admin.
+      operationId: voidPayment
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnularPagoInput' }
+      responses:
+        '200':
+          description: Pago anulado y cuota revertida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnularResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: El pago ya está anulado, o aún no fue conciliado a la cuota
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+      security:
+        - bearerAuth: [admin, supervisor]
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT emitido por Keycloak (realm `prestamos`). Los roles del realm gobiernan el acceso por endpoint.
+
+  responses:
+    BadRequest:
+      description: Solicitud inválida
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized:
+      description: Falta token o es inválido
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: El rol no autoriza la operación
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Recurso no encontrado
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string, examples: ["el pago ya está anulado"] }
+      required: [error]
+
+    MetodoPago:
+      type: string
+      enum: [efectivo, transferencia, cheque, tarjeta, qr]
+
+    TipoPago:
+      type: string
+      enum: [total, parcial]
+
+    CreatePagoInput:
+      type: object
+      required: [cuota_id, monto_pagado, metodo_pago, usuario_id]
+      properties:
+        cuota_id: { type: string, format: uuid }
+        monto_pagado: { type: number, format: double, exclusiveMinimum: 0 }
+        metodo_pago: { $ref: '#/components/schemas/MetodoPago' }
+        usuario_id: { type: string, format: uuid, description: Operador de caja }
+        observaciones: { type: [string, 'null'] }
+
+    AnularPagoInput:
+      type: object
+      required: [motivo]
+      properties:
+        motivo: { type: string, description: Motivo de la anulación (queda en auditoría) }
+
+    Pago:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        cliente_id: { type: string, format: uuid }
+        prestamo_id: { type: string, format: uuid }
+        cuota_id: { type: [string, 'null'], format: uuid }
+        fecha_pago: { type: string, format: date-time }
+        monto_pagado: { type: number, format: double }
+        capital_pagado: { type: number, format: double }
+        interes_pagado: { type: number, format: double }
+        mora_pagada: { type: number, format: double }
+        tipo: { $ref: '#/components/schemas/TipoPago' }
+        metodo_pago: { $ref: '#/components/schemas/MetodoPago' }
+        usuario_id: { type: string, format: uuid }
+        numero_recibo: { type: [string, 'null'] }
+        observaciones: { type: [string, 'null'] }
+        anulado: { type: boolean }
+        anulado_at: { type: [string, 'null'], format: date-time }
+        anulado_por: { type: [string, 'null'], format: uuid }
+        motivo_anulacion: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+
+    Movimiento:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        pago_id: { type: string, format: uuid }
+        concepto: { type: string, enum: [mora, interes, capital] }
+        monto: { type: number, format: double }
+        created_at: { type: string, format: date-time }
+
+    CuotaInfo:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        prestamo_id: { type: string, format: uuid }
+        numero: { type: integer }
+        saldo_pendiente: { type: number, format: double }
+        mora_acumulada: { type: number, format: double }
+        estado: { type: string, enum: [pendiente, pagada, parcial, vencida] }
+
+    PrestamoInfo:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        estado: { type: string, enum: [pendiente, aprobado, rechazado, activo, finalizado, mora] }
+
+    PagoResult:
+      type: object
+      properties:
+        pago: { $ref: '#/components/schemas/Pago' }
+        movimientos:
+          type: array
+          items: { $ref: '#/components/schemas/Movimiento' }
+        cuota: { $ref: '#/components/schemas/CuotaInfo' }
+        prestamo: { $ref: '#/components/schemas/PrestamoInfo' }
+
+    AnularResult:
+      type: object
+      properties:
+        pago: { $ref: '#/components/schemas/Pago' }
+        cuota: { $ref: '#/components/schemas/CuotaInfo' }
+        prestamo: { $ref: '#/components/schemas/PrestamoInfo' }
+
+    Recibo:
+      type: object
+      properties:
+        recibo_numero: { type: [string, 'null'] }
+        fecha_pago: { type: string, format: date-time }
+        cliente_id: { type: string, format: uuid }
+        prestamo_id: { type: string, format: uuid }
+        cuota_id: { type: [string, 'null'], format: uuid }
+        monto_pagado: { type: number, format: double }
+        capital: { type: number, format: double }
+        interes: { type: number, format: double }
+        mora: { type: number, format: double }
+        metodo_pago: { $ref: '#/components/schemas/MetodoPago' }
+        movimientos:
+          type: array
+          items: { $ref: '#/components/schemas/Movimiento' }
+        operador: { type: string, format: uuid }
+        anulado: { type: boolean }
+
+    ListResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Pago' }
+        total: { type: integer, format: int64 }
+        page: { type: integer }
+        limit: { type: integer }

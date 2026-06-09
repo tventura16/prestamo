@@ -1,0 +1,399 @@
+openapi: 3.1.0
+info:
+  title: Report Service API
+  version: 1.0.0
+  description: |
+    Reportería financiera y operativa del sistema de préstamos: dashboard,
+    cortes diario/mensual, cartera vencida y ficha por cliente (con elegibilidad
+    para un nuevo préstamo).
+
+    Todos los endpoints aceptan el query param `format` con valores
+    `json` (por defecto), `csv`, `xlsx` o `pdf`. Cuando `format != json` la
+    respuesta es un archivo binario con cabecera `Content-Disposition: attachment`.
+  contact:
+    name: Sistema de Préstamos
+
+servers:
+  - url: /
+    description: Acceso directo al servicio (vía API Gateway, mismo path bajo Kong)
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Reportes
+    description: Reportería financiera y operativa (supervisor/admin)
+
+paths:
+  /reports/dashboard:
+    get:
+      tags: [Reportes]
+      summary: Dashboard general
+      description: |
+        Indicadores agregados en tiempo real: préstamos activos/en mora,
+        clientes activos, cuotas vencidas, ingresos del mes/día y cartera vigente.
+      operationId: getDashboard
+      parameters:
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Dashboard (JSON) o archivo exportado según `format`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Dashboard' }
+            text/csv:
+              schema: { $ref: '#/components/schemas/ExportFile' }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { $ref: '#/components/schemas/ExportFile' }
+            application/pdf:
+              schema: { $ref: '#/components/schemas/ExportFile' }
+          headers:
+            Content-Disposition: { $ref: '#/components/headers/ContentDisposition' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      security:
+        - bearerAuth: [admin, supervisor]
+
+  /reports/daily:
+    get:
+      tags: [Reportes]
+      summary: Reporte diario
+      description: Corte de un día concreto. Si se omite `date`, se usa la fecha actual.
+      operationId: getDailyReport
+      parameters:
+        - name: date
+          in: query
+          required: false
+          description: Día del corte (por defecto, hoy).
+          schema: { type: string, format: date, examples: ["2026-06-09"] }
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Reporte diario (JSON) o archivo exportado según `format`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReporteDiario' }
+            text/csv:
+              schema: { $ref: '#/components/schemas/ExportFile' }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { $ref: '#/components/schemas/ExportFile' }
+            application/pdf:
+              schema: { $ref: '#/components/schemas/ExportFile' }
+          headers:
+            Content-Disposition: { $ref: '#/components/headers/ContentDisposition' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      security:
+        - bearerAuth: [admin, supervisor]
+
+  /reports/monthly:
+    get:
+      tags: [Reportes]
+      summary: Reporte mensual
+      description: Corte de un período mensual. Si se omiten `year`/`month`, se usa el mes actual.
+      operationId: getMonthlyReport
+      parameters:
+        - name: year
+          in: query
+          required: false
+          description: Año del período (por defecto, año actual).
+          schema: { type: integer, minimum: 2000, maximum: 9999, examples: [2026] }
+        - name: month
+          in: query
+          required: false
+          description: Mes del período 1-12 (por defecto, mes actual).
+          schema: { type: integer, minimum: 1, maximum: 12, examples: [6] }
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Reporte mensual (JSON) o archivo exportado según `format`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReporteMensual' }
+            text/csv:
+              schema: { $ref: '#/components/schemas/ExportFile' }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { $ref: '#/components/schemas/ExportFile' }
+            application/pdf:
+              schema: { $ref: '#/components/schemas/ExportFile' }
+          headers:
+            Content-Disposition: { $ref: '#/components/headers/ContentDisposition' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      security:
+        - bearerAuth: [admin, supervisor]
+
+  /reports/overdue:
+    get:
+      tags: [Reportes]
+      summary: Cuotas vencidas (cartera en mora)
+      description: Lista de cuotas vencidas ordenadas, con `total` de elementos.
+      operationId: getOverdue
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Máximo de cuotas a devolver.
+          schema: { type: integer, minimum: 1, default: 100 }
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Cuotas vencidas (JSON) o archivo exportado según `format`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OverdueResult' }
+            text/csv:
+              schema: { $ref: '#/components/schemas/ExportFile' }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { $ref: '#/components/schemas/ExportFile' }
+            application/pdf:
+              schema: { $ref: '#/components/schemas/ExportFile' }
+          headers:
+            Content-Disposition: { $ref: '#/components/headers/ContentDisposition' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      security:
+        - bearerAuth: [admin, supervisor]
+
+  /reports/clients/{id}:
+    get:
+      tags: [Reportes]
+      summary: Reporte por cliente
+      description: |
+        Ficha consolidada de un cliente: datos identificatorios, totales de
+        cartera, elegibilidad para un nuevo préstamo y resumen de cada préstamo.
+      operationId: getClientReport
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador del cliente.
+          schema: { type: string, format: uuid }
+        - $ref: '#/components/parameters/Format'
+      responses:
+        '200':
+          description: Reporte por cliente (JSON) o archivo exportado según `format`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReporteCliente' }
+            text/csv:
+              schema: { $ref: '#/components/schemas/ExportFile' }
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { $ref: '#/components/schemas/ExportFile' }
+            application/pdf:
+              schema: { $ref: '#/components/schemas/ExportFile' }
+          headers:
+            Content-Disposition: { $ref: '#/components/headers/ContentDisposition' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      security:
+        - bearerAuth: [admin, supervisor]
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT emitido por Keycloak (realm `prestamos`). Los roles del realm gobiernan el acceso por endpoint.
+
+  parameters:
+    Format:
+      name: format
+      in: query
+      required: false
+      description: |
+        Formato de salida. `json` (por defecto) devuelve el cuerpo estructurado;
+        cualquier otro valor devuelve un archivo descargable.
+      schema:
+        type: string
+        enum: [json, csv, xlsx, pdf]
+        default: json
+
+  headers:
+    ContentDisposition:
+      description: Presente cuando `format != json`; sugiere el nombre del archivo descargado.
+      schema: { type: string, examples: ['attachment; filename="dashboard-2026-06-09.pdf"'] }
+
+  responses:
+    BadRequest:
+      description: Solicitud inválida (p. ej. `format`, `date` o `id` mal formados)
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized:
+      description: Falta token o es inválido
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: El rol no autoriza la operación
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    InternalError:
+      description: Error al construir el reporte
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string, examples: ["format inválido: usa json|csv|xlsx|pdf"] }
+      required: [error]
+
+    ExportFile:
+      type: string
+      format: binary
+      description: Archivo exportado (CSV, XLSX o PDF) según el `format` solicitado.
+
+    Dashboard:
+      type: object
+      properties:
+        prestamos_activos: { type: integer }
+        prestamos_en_mora: { type: integer }
+        clientes_activos: { type: integer }
+        cuotas_vencidas: { type: integer }
+        ingresos_mes: { type: number, format: double }
+        ingresos_hoy: { type: number, format: double }
+        cartera_outstanding: { type: number, format: double }
+      required:
+        - prestamos_activos
+        - prestamos_en_mora
+        - clientes_activos
+        - cuotas_vencidas
+        - ingresos_mes
+        - ingresos_hoy
+        - cartera_outstanding
+
+    ReporteDiario:
+      type: object
+      properties:
+        fecha: { type: string, examples: ["2026-06-09"] }
+        ingresos: { type: number, format: double }
+        pagos_recibidos: { type: integer }
+        mora_cobrada: { type: number, format: double }
+        prestamos_nuevos: { type: integer }
+        clientes_nuevos: { type: integer }
+      required: [fecha, ingresos, pagos_recibidos, mora_cobrada, prestamos_nuevos, clientes_nuevos]
+
+    ReporteMensual:
+      type: object
+      properties:
+        anio: { type: integer, examples: [2026] }
+        mes: { type: integer, examples: [6] }
+        ingresos: { type: number, format: double }
+        intereses_pagados: { type: number, format: double }
+        mora_cobrada: { type: number, format: double }
+        prestamos_nuevos: { type: integer }
+        clientes_nuevos: { type: integer }
+        pagos_recibidos: { type: integer }
+      required:
+        - anio
+        - mes
+        - ingresos
+        - intereses_pagados
+        - mora_cobrada
+        - prestamos_nuevos
+        - clientes_nuevos
+        - pagos_recibidos
+
+    CuotaVencida:
+      type: object
+      properties:
+        cuota_id: { type: string, format: uuid }
+        prestamo_id: { type: string, format: uuid }
+        cliente_id: { type: string, format: uuid }
+        numero: { type: integer }
+        fecha_vencimiento: { type: string, format: date-time }
+        dias_vencidos: { type: integer }
+        total: { type: number, format: double }
+        saldo_pendiente: { type: number, format: double }
+        mora_acumulada: { type: number, format: double }
+        estado: { type: string, examples: ["vencida"] }
+      required:
+        - cuota_id
+        - prestamo_id
+        - cliente_id
+        - numero
+        - fecha_vencimiento
+        - dias_vencidos
+        - total
+        - saldo_pendiente
+        - mora_acumulada
+        - estado
+
+    OverdueResult:
+      type: object
+      properties:
+        total: { type: integer }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CuotaVencida' }
+      required: [total, items]
+
+    ClienteInfo:
+      type: object
+      properties:
+        nombres: { type: string }
+        apellidos: { type: string }
+        ci: { type: string }
+        telefono: { type: string }
+        email: { type: string }
+        estado: { type: string }
+      required: [nombres, apellidos, ci, estado]
+
+    PrestamoResumen:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        monto_aprobado: { type: [number, 'null'], format: double }
+        estado: { type: string, examples: ["activo"] }
+        num_cuotas: { type: integer }
+        cuotas_pagadas: { type: integer }
+        cuotas_vencidas: { type: integer }
+        saldo_pendiente: { type: number, format: double }
+        total_pagado: { type: number, format: double }
+        fecha_solicitud: { type: string, format: date-time }
+      required:
+        - id
+        - estado
+        - num_cuotas
+        - cuotas_pagadas
+        - cuotas_vencidas
+        - saldo_pendiente
+        - total_pagado
+        - fecha_solicitud
+
+    ReporteCliente:
+      type: object
+      properties:
+        cliente_id: { type: string, format: uuid }
+        cliente: { $ref: '#/components/schemas/ClienteInfo' }
+        num_prestamos: { type: integer }
+        prestamos_activos: { type: integer }
+        total_prestado: { type: number, format: double }
+        total_pagado: { type: number, format: double }
+        saldo_total: { type: number, format: double }
+        mora_total: { type: number, format: double }
+        cuotas_vencidas: { type: integer }
+        elegible_nuevo_prestamo: { type: boolean }
+        motivo_inelegible: { type: string }
+        prestamos:
+          type: array
+          items: { $ref: '#/components/schemas/PrestamoResumen' }
+      required:
+        - cliente_id
+        - num_prestamos
+        - prestamos_activos
+        - total_prestado
+        - total_pagado
+        - saldo_total
+        - mora_total
+        - cuotas_vencidas
+        - elegible_nuevo_prestamo
+        - prestamos

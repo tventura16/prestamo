@@ -1,0 +1,299 @@
+openapi: 3.1.0
+info:
+  title: Document Service API
+  version: 1.0.0
+  description: |
+    Generación y consulta de documentos PDF del sistema de préstamos: contratos,
+    planes de pago, recibos de caja y estados de cuenta. Cada documento generado
+    queda registrado con su metadato (tipo, estado, hash SHA-256, ruta) y se sirve
+    como binario `application/pdf` vía descarga autenticada.
+  contact:
+    name: Sistema de Préstamos
+
+servers:
+  - url: /
+    description: Acceso directo al servicio (vía API Gateway, mismo path bajo Kong)
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Documentos
+    description: Generación y consulta de documentos PDF
+
+paths:
+  /documents:
+    get:
+      tags: [Documentos]
+      summary: Listar documentos
+      description: Lista paginada de documentos con filtro opcional por tipo.
+      operationId: listDocuments
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 20 } }
+        - name: tipo
+          in: query
+          description: Filtra por tipo de documento.
+          schema: { $ref: '#/components/schemas/TipoDocumento' }
+      responses:
+        '200':
+          description: Página de documentos
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ListResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      security:
+        - bearerAuth: [admin, supervisor, cajero]
+
+  /documents/{id}:
+    get:
+      tags: [Documentos]
+      summary: Obtener documento
+      description: Devuelve los metadatos de un documento por su identificador.
+      operationId: getDocument
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Metadatos del documento
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Documento' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      security:
+        - bearerAuth: [admin, supervisor, cajero]
+
+  /documents/{id}/download:
+    get:
+      tags: [Documentos]
+      summary: Descargar PDF del documento
+      description: |
+        Devuelve el archivo PDF del documento como binario
+        (`application/pdf`) con `Content-Disposition: inline`. Falla con 404 si
+        el registro no existe o si el archivo no está en disco.
+      operationId: downloadDocument
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Contenido binario del PDF
+          headers:
+            Content-Disposition:
+              description: 'Disposición del archivo, p. ej. `inline; filename="contrato.pdf"`.'
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: Documento no encontrado o archivo ausente en disco
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+      security:
+        - bearerAuth: [admin, supervisor, cajero]
+
+  /documents/contract:
+    post:
+      tags: [Documentos]
+      summary: Generar contrato
+      description: Genera el contrato PDF de un préstamo. Reservado a supervisor/admin.
+      operationId: generateContract
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContratoInput' }
+      responses:
+        '201':
+          description: Documento de contrato generado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Documento' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      security:
+        - bearerAuth: [admin, supervisor]
+
+  /documents/plan:
+    post:
+      tags: [Documentos]
+      summary: Generar plan de pagos
+      description: Genera el plan de pagos PDF de un préstamo. Reservado a supervisor/admin.
+      operationId: generatePlan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanPagosInput' }
+      responses:
+        '201':
+          description: Documento de plan de pagos generado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Documento' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      security:
+        - bearerAuth: [admin, supervisor]
+
+  /documents/receipt:
+    post:
+      tags: [Documentos]
+      summary: Generar recibo
+      description: Genera el recibo PDF de un pago. Operación de caja (cajero/admin).
+      operationId: generateReceipt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReciboInput' }
+      responses:
+        '201':
+          description: Documento de recibo generado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Documento' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      security:
+        - bearerAuth: [admin, cajero]
+
+  /documents/statement:
+    post:
+      tags: [Documentos]
+      summary: Generar estado de cuenta
+      description: Genera el estado de cuenta PDF de un cliente.
+      operationId: generateStatement
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EstadoCuentaInput' }
+      responses:
+        '201':
+          description: Documento de estado de cuenta generado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Documento' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+      security:
+        - bearerAuth: [admin, supervisor, cajero]
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT emitido por Keycloak (realm `prestamos`). Los roles del realm gobiernan el acceso por endpoint.
+
+  responses:
+    BadRequest:
+      description: Solicitud inválida
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized:
+      description: Falta token o es inválido
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: El rol no autoriza la operación
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Recurso no encontrado
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    InternalError:
+      description: Error interno del servicio
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string, examples: ["documento no encontrado"] }
+      required: [error]
+
+    TipoDocumento:
+      type: string
+      description: Tipo de documento generado.
+      enum: [contrato, plan_pagos, recibo, estado_cuenta, carta_mora]
+
+    EstadoDocumento:
+      type: string
+      description: Estado del ciclo de vida del documento.
+      enum: [pendiente, generado, enviado, error]
+
+    ContratoInput:
+      type: object
+      required: [prestamo_id]
+      properties:
+        prestamo_id: { type: string, format: uuid, description: Préstamo para el que se genera el contrato }
+        generado_por: { type: [string, 'null'], format: uuid, description: Usuario que solicita la generación }
+
+    PlanPagosInput:
+      type: object
+      required: [prestamo_id]
+      properties:
+        prestamo_id: { type: string, format: uuid, description: Préstamo para el que se genera el plan de pagos }
+        generado_por: { type: [string, 'null'], format: uuid, description: Usuario que solicita la generación }
+
+    ReciboInput:
+      type: object
+      required: [pago_id]
+      properties:
+        pago_id: { type: string, format: uuid, description: Pago para el que se genera el recibo }
+        generado_por: { type: [string, 'null'], format: uuid, description: Usuario que solicita la generación }
+
+    EstadoCuentaInput:
+      type: object
+      required: [cliente_id]
+      properties:
+        cliente_id: { type: string, format: uuid, description: Cliente para el que se genera el estado de cuenta }
+        generado_por: { type: [string, 'null'], format: uuid, description: Usuario que solicita la generación }
+
+    Documento:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tipo: { $ref: '#/components/schemas/TipoDocumento' }
+        cliente_id: { type: [string, 'null'], format: uuid }
+        prestamo_id: { type: [string, 'null'], format: uuid }
+        pago_id: { type: [string, 'null'], format: uuid }
+        nombre_archivo: { type: string, examples: ["contrato_8f3a.pdf"] }
+        ruta: { type: string, description: Ruta del archivo en el almacén del servicio }
+        hash_sha256: { type: [string, 'null'], description: Hash SHA-256 del contenido del PDF }
+        tamanio_kb: { type: [integer, 'null'] }
+        estado: { $ref: '#/components/schemas/EstadoDocumento' }
+        error_mensaje: { type: [string, 'null'] }
+        generado_por: { type: [string, 'null'], format: uuid }
+        generado_at: { type: string, format: date-time }
+      required: [id, tipo, nombre_archivo, ruta, estado, generado_at]
+
+    ListResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Documento' }
+        total: { type: integer, format: int64 }
+        page: { type: integer }
+        limit: { type: integer }

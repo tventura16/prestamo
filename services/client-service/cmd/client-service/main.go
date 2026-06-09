@@ -17,6 +17,7 @@ import (
 	"github.com/prestamos/client-service/internal/auth"
 	"github.com/prestamos/client-service/internal/config"
 	"github.com/prestamos/client-service/internal/db"
+	"github.com/prestamos/client-service/internal/docs"
 	"github.com/prestamos/client-service/internal/handler"
 	"github.com/prestamos/client-service/internal/repository"
 )
@@ -108,6 +109,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	docs.Register(r)
 
 	// Protegidos: endpoints de negocio.
 	api := r.Group("")

@@ -1,0 +1,225 @@
+openapi: 3.1.0
+info:
+  title: Client Service API
+  version: 1.0.0
+  description: |
+    Gestión del maestro de clientes del sistema de préstamos: alta, consulta,
+    edición y baja. El CI es único por cliente. Los clientes transitan entre
+    los estados `activo`, `inactivo` y `bloqueado`.
+  contact:
+    name: Sistema de Préstamos
+
+servers:
+  - url: /
+    description: Acceso directo al servicio (vía API Gateway, mismo path bajo Kong)
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Clientes
+    description: Maestro de clientes
+
+paths:
+  /clients:
+    get:
+      tags: [Clientes]
+      summary: Listar clientes
+      description: Lista paginada de clientes con búsqueda opcional por nombres, apellidos o CI.
+      operationId: listClients
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 20 } }
+        - name: search
+          in: query
+          description: Filtro de texto libre (nombres, apellidos o CI).
+          schema: { type: string }
+      responses:
+        '200':
+          description: Página de clientes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ListResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+      security:
+        - bearerAuth: [admin, supervisor, cajero]
+    post:
+      tags: [Clientes]
+      summary: Crear cliente
+      description: |
+        Registra un nuevo cliente. El CI debe ser único; un CI ya existente
+        devuelve 409. El estado por defecto es `activo` si se omite.
+      operationId: createClient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateClienteInput' }
+      responses:
+        '201':
+          description: Cliente creado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cliente' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409':
+          description: Ya existe un cliente con ese CI
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+      security:
+        - bearerAuth: [admin, cajero]
+
+  /clients/{id}:
+    get:
+      tags: [Clientes]
+      summary: Obtener cliente
+      operationId: getClient
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Cliente solicitado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cliente' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      security:
+        - bearerAuth: [admin, supervisor, cajero]
+    put:
+      tags: [Clientes]
+      summary: Actualizar cliente
+      description: |
+        Actualización parcial: solo los campos presentes en el cuerpo se
+        modifican. Cambiar el CI a uno ya existente devuelve 409.
+      operationId: updateClient
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateClienteInput' }
+      responses:
+        '200':
+          description: Cliente actualizado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cliente' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Ya existe un cliente con ese CI
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+      security:
+        - bearerAuth: [admin, cajero]
+    delete:
+      tags: [Clientes]
+      summary: Eliminar cliente
+      description: Elimina un cliente. Reservado a admin.
+      operationId: deleteClient
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204':
+          description: Cliente eliminado
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+      security:
+        - bearerAuth: [admin]
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT emitido por Keycloak (realm `prestamos`). Los roles del realm gobiernan el acceso por endpoint.
+
+  responses:
+    BadRequest:
+      description: Solicitud inválida
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized:
+      description: Falta token o es inválido
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: El rol no autoriza la operación
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Recurso no encontrado
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string, examples: ["ya existe un cliente con ese CI"] }
+      required: [error]
+
+    Estado:
+      type: string
+      enum: [activo, inactivo, bloqueado]
+      description: Estado del cliente en el sistema.
+
+    CreateClienteInput:
+      type: object
+      required: [nombres, apellidos, ci, fecha_nacimiento]
+      properties:
+        nombres: { type: string, minLength: 1, maxLength: 100, examples: ["Juan Carlos"] }
+        apellidos: { type: string, minLength: 1, maxLength: 100, examples: ["Pérez Mamani"] }
+        ci: { type: string, minLength: 4, maxLength: 20, description: Cédula de identidad (única), examples: ["7654321 LP"] }
+        fecha_nacimiento: { type: string, format: date, description: Fecha en formato YYYY-MM-DD, examples: ["1990-05-12"] }
+        telefono: { type: [string, 'null'], maxLength: 20, examples: ["71234567"] }
+        direccion: { type: [string, 'null'] }
+        email: { type: [string, 'null'], format: email, maxLength: 150, examples: ["juan.perez@example.com"] }
+        estado: { $ref: '#/components/schemas/Estado' }
+        foto_url: { type: [string, 'null'] }
+
+    UpdateClienteInput:
+      type: object
+      description: Todos los campos son opcionales; solo los presentes se actualizan.
+      properties:
+        nombres: { type: [string, 'null'], minLength: 1, maxLength: 100 }
+        apellidos: { type: [string, 'null'], minLength: 1, maxLength: 100 }
+        ci: { type: [string, 'null'], minLength: 4, maxLength: 20 }
+        fecha_nacimiento: { type: [string, 'null'], format: date, description: Fecha en formato YYYY-MM-DD }
+        telefono: { type: [string, 'null'], maxLength: 20 }
+        direccion: { type: [string, 'null'] }
+        email: { type: [string, 'null'], format: email, maxLength: 150 }
+        estado: { $ref: '#/components/schemas/Estado' }
+        foto_url: { type: [string, 'null'] }
+
+    Cliente:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        nombres: { type: string }
+        apellidos: { type: string }
+        ci: { type: string }
+        fecha_nacimiento: { type: string, format: date-time }
+        telefono: { type: [string, 'null'] }
+        direccion: { type: [string, 'null'] }
+        email: { type: [string, 'null'] }
+        estado: { $ref: '#/components/schemas/Estado' }
+        foto_url: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ListResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Cliente' }
+        total: { type: integer, format: int64 }
+        page: { type: integer }
+        limit: { type: integer }

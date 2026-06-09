@@ -17,6 +17,7 @@ import (
 	"github.com/prestamos/report-service/internal/auth"
 	"github.com/prestamos/report-service/internal/config"
 	"github.com/prestamos/report-service/internal/db"
+	"github.com/prestamos/report-service/internal/docs"
 	"github.com/prestamos/report-service/internal/handler"
 	"github.com/prestamos/report-service/internal/repository"
 	"github.com/prestamos/report-service/internal/service"
@@ -135,6 +136,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	docs.Register(r)
 
 	api := r.Group("")
 	if verifier != nil {
