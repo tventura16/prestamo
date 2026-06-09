@@ -1,7 +1,8 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule, CurrencyPipe } from '@angular/common';
 import { PaymentService, Pago } from '../../core/services/payment.service';
 import { DocumentService } from '../../core/services/document.service';
+import { KeycloakService } from '../../core/keycloak.service';
 
 @Component({
   selector: 'app-pagos',
@@ -42,10 +43,15 @@ import { DocumentService } from '../../core/services/document.service';
               <td class="r">{{ p.mora_pagada | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
               <td>{{ p.metodo_pago }}</td>
               <td><span class="badge" [class]="'t-' + p.tipo">{{ p.tipo }}</span></td>
-              <td>
+              <td class="actions">
                 <button class="link-btn" (click)="generarRecibo(p)" [disabled]="generando() === p.id">
                   {{ generando() === p.id ? '...' : 'Recibo PDF' }}
                 </button>
+                @if (p.anulado) {
+                  <span class="badge anulado-badge" [title]="p.motivo_anulacion || ''">Anulado</span>
+                } @else if (puedeAnular()) {
+                  <button class="link-btn danger" (click)="abrirAnular(p)">Anular</button>
+                }
               </td>
             </tr>
           } @empty {
@@ -56,6 +62,30 @@ import { DocumentService } from '../../core/services/document.service';
     </div>
 
     <p class="hint">Mostrando {{ items().length }} de {{ total() }} pagos</p>
+
+    @if (anulandoPago(); as p) {
+      <div class="modal-overlay" (click)="cerrarAnular()">
+        <div class="modal" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="anular-title">
+          <h3 id="anular-title">Anular pago {{ p.numero_recibo }}</h3>
+          <p class="muted">
+            Se revertirá la aplicación a la cuota
+            (<b>{{ p.monto_pagado | currency:'BOB':'symbol-narrow':'1.2-2' }}</b>) y la acción quedará
+            registrada en auditoría. No se puede deshacer.
+          </p>
+          <label for="motivo">Motivo <span class="req">*</span></label>
+          <textarea id="motivo" rows="3" [value]="motivo()"
+                    (input)="motivo.set($any($event.target).value)"
+                    placeholder="Ej.: pago duplicado por error de caja"></textarea>
+          @if (modalError()) { <p class="err">{{ modalError() }}</p> }
+          <div class="modal-actions">
+            <button class="btn-ghost" (click)="cerrarAnular()" [disabled]="anulando()">Cancelar</button>
+            <button class="btn-danger" (click)="confirmarAnular()" [disabled]="anulando() || !motivo().trim()">
+              {{ anulando() ? 'Anulando...' : 'Anular pago' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    }
   `,
   styles: [`
     h2 { color: #2d3748; }
@@ -73,21 +103,53 @@ import { DocumentService } from '../../core/services/document.service';
     .center { text-align: center; }
     .hint { color: #718096; font-size: 13px; margin-top: 8px; }
     .err { color: #c53030; background: #fff5f5; padding: 10px; border-radius: 6px; }
-    tr.anulado { opacity: 0.5; text-decoration: line-through; }
+    tr.anulado { opacity: 0.55; }
+    tr.anulado td:not(.actions) { text-decoration: line-through; }
+    .actions { display: flex; gap: 12px; align-items: center; white-space: nowrap; }
     .link-btn { background: none; border: none; color: #2c5282; cursor: pointer; font-size: 13px; padding: 0; }
     .link-btn:hover { text-decoration: underline; }
     .link-btn:disabled { color: #a0aec0; cursor: not-allowed; }
+    .link-btn.danger { color: #c53030; }
+    .anulado-badge { background: #fed7d7; color: #822727; cursor: default; }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex;
+      align-items: center; justify-content: center; z-index: 50; }
+    .modal { background: white; border-radius: 10px; padding: 24px; width: 100%; max-width: 440px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.25); }
+    .modal h3 { margin: 0 0 8px; color: #2d3748; }
+    .modal label { display: block; font-size: 13px; font-weight: 600; color: #4a5568; margin: 12px 0 4px; }
+    .modal .req { color: #c53030; }
+    .modal textarea { width: 100%; box-sizing: border-box; border: 1px solid #cbd5e0; border-radius: 6px;
+      padding: 8px; font: inherit; font-size: 14px; resize: vertical; }
+    .modal textarea:focus { outline: none; border-color: #3182ce; box-shadow: 0 0 0 3px rgba(49,130,206,0.15); }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+    .btn-ghost { background: none; border: 1px solid #cbd5e0; color: #4a5568; border-radius: 6px;
+      padding: 8px 16px; cursor: pointer; font-size: 14px; }
+    .btn-danger { background: #c53030; border: none; color: white; border-radius: 6px;
+      padding: 8px 16px; cursor: pointer; font-size: 14px; }
+    .btn-danger:disabled, .btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
   `],
 })
 export class Pagos implements OnInit {
   private svc = inject(PaymentService);
   private docSvc = inject(DocumentService);
+  private kc = inject(KeycloakService);
 
   items = signal<Pago[]>([]);
   total = signal(0);
   loading = signal(false);
   error = signal<string | null>(null);
   generando = signal<string | null>(null);
+
+  // Anular es operación sensible: visible solo para supervisor/admin (el
+  // backend lo aplica igual; esto evita ofrecer una acción que daría 403).
+  puedeAnular = computed(() =>
+    this.kc.roles().includes('admin') || this.kc.roles().includes('supervisor'),
+  );
+
+  anulandoPago = signal<Pago | null>(null);
+  motivo = signal('');
+  anulando = signal(false);
+  modalError = signal<string | null>(null);
 
   ngOnInit() {
     this.loading.set(true);
@@ -118,6 +180,38 @@ export class Pagos implements OnInit {
       error: e => {
         this.error.set(e.error?.error || e.message);
         this.generando.set(null);
+      },
+    });
+  }
+
+  abrirAnular(p: Pago) {
+    this.anulandoPago.set(p);
+    this.motivo.set('');
+    this.modalError.set(null);
+  }
+
+  cerrarAnular() {
+    if (this.anulando()) return;
+    this.anulandoPago.set(null);
+  }
+
+  confirmarAnular() {
+    const p = this.anulandoPago();
+    const motivo = this.motivo().trim();
+    if (!p || !motivo) return;
+
+    this.anulando.set(true);
+    this.modalError.set(null);
+    this.svc.anular(p.id, motivo).subscribe({
+      next: res => {
+        // Reemplaza la fila con el pago anulado devuelto por el backend.
+        this.items.update(list => list.map(x => (x.id === p.id ? res.pago : x)));
+        this.anulando.set(false);
+        this.anulandoPago.set(null);
+      },
+      error: e => {
+        this.modalError.set(e.error?.error || e.message);
+        this.anulando.set(false);
       },
     });
   }

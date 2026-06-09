@@ -21,6 +21,9 @@ export interface Pago {
   numero_recibo?: string;
   observaciones?: string;
   anulado: boolean;
+  anulado_at?: string;
+  anulado_por?: string;
+  motivo_anulacion?: string;
   created_at: string;
 }
 
@@ -54,5 +57,14 @@ export class PaymentService {
   create(data: CreatePagoInput, idempotencyKey?: string): Observable<{ pago: Pago; cuota: any; prestamo: any }> {
     const headers = idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined;
     return this.http.post<{ pago: Pago; cuota: any; prestamo: any }>(this.base, data, { headers });
+  }
+
+  /**
+   * Anula un pago (reversión compensatoria). Reservado a supervisor/admin en el
+   * backend; el `motivo` queda en la auditoría. Devuelve el pago anulado y el
+   * estado al que converge la cuota/préstamo.
+   */
+  anular(id: string, motivo: string): Observable<{ pago: Pago; cuota: any; prestamo: any }> {
+    return this.http.post<{ pago: Pago; cuota: any; prestamo: any }>(`${this.base}/${id}/void`, { motivo });
   }
 }
