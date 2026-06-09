@@ -33,6 +33,8 @@ func (h *PagoHandler) Register(rg *gin.RouterGroup) {
 	rg.POST("", h.verifier.GuardRole("admin", "cajero"), h.Create)
 	rg.GET("/:id", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.Get)
 	rg.GET("/:id/receipt", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.Receipt)
+	// Anular es operación sensible (reversión de caja): supervisor/admin.
+	rg.POST("/:id/void", h.verifier.GuardRole("admin", "supervisor"), h.Anular)
 }
 
 func (h *PagoHandler) Create(c *gin.Context) {
@@ -121,27 +123,57 @@ func (h *PagoHandler) Receipt(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"recibo_numero":  p.NumeroRecibo,
-		"fecha_pago":     p.FechaPago,
-		"cliente_id":     p.ClienteID,
-		"prestamo_id":    p.PrestamoID,
-		"cuota_id":       p.CuotaID,
-		"monto_pagado":   p.MontoPagado,
-		"capital":        p.CapitalPagado,
-		"interes":        p.InteresPagado,
-		"mora":           p.MoraPagada,
-		"metodo_pago":    p.MetodoPago,
-		"movimientos":    movs,
-		"operador":       p.UsuarioID,
-		"anulado":        p.Anulado,
+		"recibo_numero": p.NumeroRecibo,
+		"fecha_pago":    p.FechaPago,
+		"cliente_id":    p.ClienteID,
+		"prestamo_id":   p.PrestamoID,
+		"cuota_id":      p.CuotaID,
+		"monto_pagado":  p.MontoPagado,
+		"capital":       p.CapitalPagado,
+		"interes":       p.InteresPagado,
+		"mora":          p.MoraPagada,
+		"metodo_pago":   p.MetodoPago,
+		"movimientos":   movs,
+		"operador":      p.UsuarioID,
+		"anulado":       p.Anulado,
 	})
+}
+
+// Anular revierte un pago previamente registrado. El operador se toma del
+// token (claims.sub); el motivo, del cuerpo. Reservado a supervisor/admin.
+func (h *PagoHandler) Anular(c *gin.Context) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id inválido"})
+		return
+	}
+	var in models.AnularPagoInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "motivo de anulación requerido"})
+		return
+	}
+
+	// Operador que anula: del JWT cuando hay auth; nil en modo dev.
+	var anuladoPor *uuid.UUID
+	if claims, ok := auth.FromContext(c); ok {
+		anuladoPor = &claims.UserID
+	}
+
+	res, err := h.svc.Anular(ctxOf(c), id, anuladoPor, in.Motivo)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, res)
 }
 
 func respondError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, repository.ErrCuotaNotFound), errors.Is(err, repository.ErrPagoNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-	case errors.Is(err, repository.ErrCuotaPagada):
+	case errors.Is(err, repository.ErrCuotaPagada),
+		errors.Is(err, repository.ErrPagoYaAnulado),
+		errors.Is(err, repository.ErrAplicacionNoConcilia):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	case errors.Is(err, repository.ErrOverpayment):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})

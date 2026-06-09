@@ -64,12 +64,14 @@ func NewPublisher(brokers []string) *Publisher {
 	}
 }
 
-// Publish envía un mensaje con key (usamos cuota_id para ordenar por cuota).
-func (p *Publisher) Publish(ctx context.Context, topic string, key, value []byte) error {
+// Publish envía un mensaje con key (usamos pago_id para ordenar por agregado).
+// Los headers opcionales transportan metadatos de enrutamiento (event_type).
+func (p *Publisher) Publish(ctx context.Context, topic string, key, value []byte, headers ...kafka.Header) error {
 	return p.w.WriteMessages(ctx, kafka.Message{
-		Topic: topic,
-		Key:   key,
-		Value: value,
+		Topic:   topic,
+		Key:     key,
+		Value:   value,
+		Headers: headers,
 	})
 }
 

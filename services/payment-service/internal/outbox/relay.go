@@ -7,6 +7,9 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/segmentio/kafka-go"
+
+	"github.com/prestamos/payment-service/internal/events"
 	"github.com/prestamos/payment-service/internal/messaging"
 	"github.com/prestamos/payment-service/internal/repository"
 )
@@ -65,10 +68,11 @@ func (r *Relay) drain(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			// La key es el aggregate_id (pago_id); el evento pago.registrado
-			// lleva el cuota_id en el payload para ordenar la aplicación.
+			// La key es el aggregate_id (pago_id); el event_type viaja como
+			// header para que el consumer enrute sin inspeccionar el payload.
 			key := []byte(e.AggregateID.String())
-			if err := r.pub.Publish(ctx, r.topic, key, e.Payload); err != nil {
+			header := kafka.Header{Key: events.HeaderEventType, Value: []byte(e.EventType)}
+			if err := r.pub.Publish(ctx, r.topic, key, e.Payload, header); err != nil {
 				r.logger.Error("outbox publish failed", "event_id", e.ID, "err", err)
 				_ = r.repo.MarkFailed(ctx, e.ID, err.Error())
 				continue

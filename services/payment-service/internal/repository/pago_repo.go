@@ -12,7 +12,10 @@ import (
 	"github.com/prestamos/payment-service/internal/models"
 )
 
-var ErrPagoNotFound = errors.New("pago no encontrado")
+var (
+	ErrPagoNotFound  = errors.New("pago no encontrado")
+	ErrPagoYaAnulado = errors.New("el pago ya está anulado")
+)
 
 type PagoRepository struct {
 	pool *pgxpool.Pool
@@ -24,14 +27,16 @@ func NewPagoRepository(pool *pgxpool.Pool) *PagoRepository {
 
 const pagoColumns = `id, cliente_id, prestamo_id, cuota_id, fecha_pago, monto_pagado,
 		capital_pagado, interes_pagado, mora_pagada, tipo, metodo_pago,
-		usuario_id, numero_recibo, observaciones, anulado, created_at`
+		usuario_id, numero_recibo, observaciones, anulado,
+		anulado_at, anulado_por, motivo_anulacion, created_at`
 
 func scanPago(row pgx.Row) (models.Pago, error) {
 	var p models.Pago
 	err := row.Scan(
 		&p.ID, &p.ClienteID, &p.PrestamoID, &p.CuotaID, &p.FechaPago, &p.MontoPagado,
 		&p.CapitalPagado, &p.InteresPagado, &p.MoraPagada, &p.Tipo, &p.MetodoPago,
-		&p.UsuarioID, &p.NumeroRecibo, &p.Observaciones, &p.Anulado, &p.CreatedAt,
+		&p.UsuarioID, &p.NumeroRecibo, &p.Observaciones, &p.Anulado,
+		&p.AnuladoAt, &p.AnuladoPor, &p.MotivoAnulacion, &p.CreatedAt,
 	)
 	return p, err
 }
@@ -128,6 +133,27 @@ func (r *PagoRepository) SaveIdempotencyKeyTx(ctx context.Context, tx pgx.Tx,
 		return fmt.Errorf("save idempotency key: %w", err)
 	}
 	return nil
+}
+
+// MarkAnuladoTx marca el pago como anulado dentro de la TX dada (DB pagos),
+// con guard `AND NOT anulado` para ser seguro ante carreras. Devuelve el pago
+// actualizado; ErrPagoYaAnulado si otra anulación ganó la carrera.
+func (r *PagoRepository) MarkAnuladoTx(ctx context.Context, tx pgx.Tx,
+	pagoID uuid.UUID, anuladoPor *uuid.UUID, motivo string,
+) (models.Pago, error) {
+	row := tx.QueryRow(ctx, `UPDATE pagos
+		SET anulado = TRUE, anulado_at = NOW(), anulado_por = $2, motivo_anulacion = $3
+		WHERE id = $1 AND NOT anulado
+		RETURNING `+pagoColumns,
+		pagoID, anuladoPor, motivo)
+	p, err := scanPago(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return models.Pago{}, ErrPagoYaAnulado
+		}
+		return models.Pago{}, fmt.Errorf("mark anulado: %w", err)
+	}
+	return p, nil
 }
 
 func (r *PagoRepository) GetByID(ctx context.Context, id uuid.UUID) (models.Pago, []models.Movimiento, error) {

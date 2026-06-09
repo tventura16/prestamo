@@ -15,8 +15,13 @@ const (
 	TopicPagosDLQ = "pagos.eventos.dlq"
 
 	TypePagoRegistrado = "pago.registrado"
+	TypePagoAnulado    = "pago.anulado"
 
 	AggregatePago = "pago"
+
+	// HeaderEventType viaja en el header del mensaje Kafka para que el consumer
+	// enrute por tipo sin inspeccionar el payload.
+	HeaderEventType = "event_type"
 )
 
 // PagoRegistrado es el payload del evento que dispara la aplicación del pago
@@ -45,6 +50,34 @@ func (p PagoRegistrado) Marshal() ([]byte, error) {
 // UnmarshalPagoRegistrado deserializa el payload desde Kafka/outbox.
 func UnmarshalPagoRegistrado(b []byte) (PagoRegistrado, error) {
 	var p PagoRegistrado
+	err := json.Unmarshal(b, &p)
+	return p, err
+}
+
+// PagoAnulado es el payload del evento que dispara la reversión de un pago
+// previamente aplicado. Lleva los montos REALMENTE aplicados a la cuota
+// (leídos del ledger pago_aplicaciones, ya clampeados), que es lo que debe
+// devolverse al saldo/mora. El consumer revierte de forma idempotente.
+type PagoAnulado struct {
+	PagoID     uuid.UUID `json:"pago_id"`
+	CuotaID    uuid.UUID `json:"cuota_id"`
+	PrestamoID uuid.UUID `json:"prestamo_id"`
+	ClienteID  uuid.UUID `json:"cliente_id"`
+	Capital    float64   `json:"capital"`
+	Interes    float64   `json:"interes"`
+	Mora       float64   `json:"mora"`
+	Motivo     string    `json:"motivo"`
+	OcurridoEn time.Time `json:"ocurrido_en"`
+}
+
+// Marshal serializa el payload para almacenarlo en el outbox.
+func (p PagoAnulado) Marshal() ([]byte, error) {
+	return json.Marshal(p)
+}
+
+// UnmarshalPagoAnulado deserializa el payload desde Kafka/outbox.
+func UnmarshalPagoAnulado(b []byte) (PagoAnulado, error) {
+	var p PagoAnulado
 	err := json.Unmarshal(b, &p)
 	return p, err
 }

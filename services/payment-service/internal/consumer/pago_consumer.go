@@ -6,6 +6,7 @@ package consumer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -56,7 +57,7 @@ func (c *PagoConsumer) Run(ctx context.Context) {
 			// Agotados los reintentos: a la DLQ y avanzar el offset para no
 			// bloquear la partición.
 			c.logger.Error("evento enviado a DLQ", "err", err, "key", string(msg.Key))
-			if derr := c.pub.Publish(ctx, c.dlqTopic, msg.Key, msg.Value); derr != nil {
+			if derr := c.pub.Publish(ctx, c.dlqTopic, msg.Key, msg.Value, msg.Headers...); derr != nil {
 				c.logger.Error("publish DLQ failed", "err", derr)
 			}
 		}
@@ -67,11 +68,13 @@ func (c *PagoConsumer) Run(ctx context.Context) {
 	}
 }
 
-// handle procesa un mensaje con reintentos in-process y backoff.
+// handle procesa un mensaje con reintentos in-process y backoff. Enruta por el
+// header event_type hacia la aplicación (pago.registrado) o la reversión
+// (pago.anulado) del pago.
 func (c *PagoConsumer) handle(ctx context.Context, msg kafka.Message) error {
-	evt, err := events.UnmarshalPagoRegistrado(msg.Value)
+	apply, err := c.dispatch(msg)
 	if err != nil {
-		// Mensaje irrecuperable (payload corrupto) → directo a DLQ.
+		// Payload corrupto o tipo desconocido → irrecuperable → DLQ.
 		return err
 	}
 
@@ -84,19 +87,40 @@ func (c *PagoConsumer) handle(ctx context.Context, msg kafka.Message) error {
 			case <-time.After(time.Duration(attempt) * 200 * time.Millisecond):
 			}
 		}
-		if err := c.apply(ctx, evt); err != nil {
+		if err := apply(ctx); err != nil {
 			lastErr = err
-			c.logger.Warn("apply event failed, retrying", "attempt", attempt, "pago_id", evt.PagoID, "err", err)
+			c.logger.Warn("apply event failed, retrying", "attempt", attempt, "key", string(msg.Key), "err", err)
 			continue
 		}
-		c.logger.Debug("event applied", "pago_id", evt.PagoID, "cuota_id", evt.CuotaID)
 		return nil
 	}
 	return lastErr
 }
 
-// apply ejecuta la aplicación idempotente dentro de una transacción.
-func (c *PagoConsumer) apply(ctx context.Context, evt events.PagoRegistrado) error {
+// dispatch deserializa el mensaje según su event_type y devuelve la operación
+// idempotente a ejecutar (con reintentos) sobre la DB prestamos.
+func (c *PagoConsumer) dispatch(msg kafka.Message) (func(context.Context) error, error) {
+	switch t := eventTypeOf(msg); t {
+	case events.TypePagoAnulado:
+		evt, err := events.UnmarshalPagoAnulado(msg.Value)
+		if err != nil {
+			return nil, err
+		}
+		return func(ctx context.Context) error { return c.applyAnulado(ctx, evt) }, nil
+	case events.TypePagoRegistrado, "":
+		// "" preserva la compatibilidad con mensajes previos sin header.
+		evt, err := events.UnmarshalPagoRegistrado(msg.Value)
+		if err != nil {
+			return nil, err
+		}
+		return func(ctx context.Context) error { return c.applyRegistrado(ctx, evt) }, nil
+	default:
+		return nil, fmt.Errorf("tipo de evento desconocido: %q", t)
+	}
+}
+
+// applyRegistrado ejecuta la aplicación idempotente dentro de una transacción.
+func (c *PagoConsumer) applyRegistrado(ctx context.Context, evt events.PagoRegistrado) error {
 	tx, err := c.loanRepo.Pool().Begin(ctx)
 	if err != nil {
 		return err
@@ -120,4 +144,35 @@ func (c *PagoConsumer) apply(ctx context.Context, evt events.PagoRegistrado) err
 		c.logger.Debug("event already applied (idempotent skip)", "pago_id", evt.PagoID)
 	}
 	return nil
+}
+
+// applyAnulado ejecuta la reversión idempotente dentro de una transacción.
+func (c *PagoConsumer) applyAnulado(ctx context.Context, evt events.PagoAnulado) error {
+	tx, err := c.loanRepo.Pool().Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	res, _, err := c.loanRepo.ReversePagoFromCuota(ctx, tx, evt.PagoID)
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	if res.Skipped {
+		c.logger.Debug("reversion already applied (idempotent skip)", "pago_id", evt.PagoID)
+	}
+	return nil
+}
+
+// eventTypeOf extrae el header de enrutamiento; "" si no viene.
+func eventTypeOf(msg kafka.Message) string {
+	for _, h := range msg.Headers {
+		if h.Key == events.HeaderEventType {
+			return string(h.Value)
+		}
+	}
+	return ""
 }
