@@ -5,6 +5,18 @@ import { ListResult } from './client.service';
 
 export type EstadoPrestamo = 'pendiente' | 'aprobado' | 'rechazado' | 'activo' | 'finalizado' | 'mora';
 export type Frecuencia = 'diaria' | 'semanal' | 'quincenal' | 'mensual';
+export type TipoGarantia = 'garante' | 'prendaria' | 'hipotecaria';
+
+export interface Garantia {
+  id: string;
+  prestamo_id: string;
+  nombre_archivo: string;
+  mime: string;
+  tamanio_bytes: number;
+  descripcion?: string;
+  subido_por?: string;
+  created_at: string;
+}
 
 export interface Prestamo {
   id: string;
@@ -20,6 +32,7 @@ export interface Prestamo {
   estado: EstadoPrestamo;
   aprobado_por?: string;
   observaciones?: string;
+  tipo_garantia?: TipoGarantia;
   created_at: string;
   updated_at: string;
 }
@@ -45,6 +58,7 @@ export interface CreatePrestamoInput {
   num_cuotas: number;
   frecuencia: Frecuencia;
   observaciones?: string;
+  tipo_garantia?: TipoGarantia;
 }
 
 export interface ApproveInput {
@@ -86,5 +100,29 @@ export class LoanService {
 
   reject(id: string, data: { aprobado_por: string; observaciones: string }): Observable<Prestamo> {
     return this.http.post<Prestamo>(`${this.base}/${id}/reject`, data);
+  }
+
+  // ─── Garantías (imágenes adjuntas al préstamo) ───
+
+  listGarantias(prestamoId: string): Observable<{ total: number; items: Garantia[] }> {
+    return this.http.get<{ total: number; items: Garantia[] }>(`${this.base}/${prestamoId}/garantias`);
+  }
+
+  /** Sube una imagen como multipart. No fijamos Content-Type: el navegador
+   *  agrega el boundary; el interceptor añade el Bearer. */
+  uploadGarantia(prestamoId: string, file: File, descripcion?: string): Observable<Garantia> {
+    const form = new FormData();
+    form.append('imagen', file);
+    if (descripcion) form.append('descripcion', descripcion);
+    return this.http.post<Garantia>(`${this.base}/${prestamoId}/garantias`, form);
+  }
+
+  /** Descarga autenticada de la imagen como blob. */
+  downloadGarantia(prestamoId: string, gid: string): Observable<Blob> {
+    return this.http.get(`${this.base}/${prestamoId}/garantias/${gid}/download`, { responseType: 'blob' });
+  }
+
+  deleteGarantia(prestamoId: string, gid: string): Observable<{ deleted: string }> {
+    return this.http.delete<{ deleted: string }>(`${this.base}/${prestamoId}/garantias/${gid}`);
   }
 }

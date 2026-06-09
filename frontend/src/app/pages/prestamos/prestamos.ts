@@ -8,6 +8,7 @@ import {
   Prestamo,
   EstadoPrestamo,
   Frecuencia,
+  TipoGarantia,
   CreatePrestamoInput,
 } from '../../core/services/loan.service';
 import { ClienteService, Cliente } from '../../core/services/client.service';
@@ -19,6 +20,7 @@ interface PrestamoForm {
   num_cuotas: number | null;
   frecuencia: Frecuencia;
   observaciones: string;
+  tipo_garantia: TipoGarantia | '';
 }
 
 @Component({
@@ -80,9 +82,19 @@ interface PrestamoForm {
                    [(ngModel)]="form.num_cuotas" name="num_cuotas" required class="ui-input">
           </label>
         </div>
-        <label class="flex flex-col gap-1 text-sm text-slate-600">Observaciones
-          <input [(ngModel)]="form.observaciones" name="observaciones" class="ui-input">
-        </label>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label class="flex flex-col gap-1 text-sm text-slate-600">Tipo de garantía
+            <select [(ngModel)]="form.tipo_garantia" name="tipo_garantia" class="ui-input">
+              <option value="">Sin garantía</option>
+              <option value="garante">Garante (fianza)</option>
+              <option value="prendaria">Prendaria</option>
+              <option value="hipotecaria">Hipotecaria</option>
+            </select>
+          </label>
+          <label class="flex flex-col gap-1 text-sm text-slate-600">Observaciones
+            <input [(ngModel)]="form.observaciones" name="observaciones" class="ui-input">
+          </label>
+        </div>
 
         @if (submitError()) {
           <p class="rounded-md bg-red-50 p-3 text-sm text-red-600">{{ submitError() }}</p>
@@ -211,6 +223,7 @@ export class Prestamos implements OnInit {
       num_cuotas: this.form.num_cuotas,
       frecuencia: this.form.frecuencia,
       observaciones: this.form.observaciones || undefined,
+      tipo_garantia: this.form.tipo_garantia || undefined,
     };
     this.submitting.set(true);
     this.submitError.set(null);
@@ -236,7 +249,7 @@ export class Prestamos implements OnInit {
   private emptyForm(): PrestamoForm {
     return {
       cliente_id: '', monto_solicitado: null, tasa_porcentaje: 5,
-      num_cuotas: 6, frecuencia: 'mensual', observaciones: '',
+      num_cuotas: 6, frecuencia: 'mensual', observaciones: '', tipo_garantia: '',
     };
   }
 }

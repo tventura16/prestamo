@@ -3,7 +3,7 @@ import { CommonModule, CurrencyPipe } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 
-import { LoanService, Prestamo, Cuota } from '../../core/services/loan.service';
+import { LoanService, Prestamo, Cuota, Garantia } from '../../core/services/loan.service';
 import { PaymentService, MetodoPago } from '../../core/services/payment.service';
 import { DocumentService } from '../../core/services/document.service';
 import { KeycloakService } from '../../core/keycloak.service';
@@ -32,6 +32,7 @@ import { KeycloakService } from '../../core/keycloak.service';
           <div><b>Cuotas:</b> {{ p.num_cuotas }} ({{ p.frecuencia }})</div>
           <div><b>Solicitud:</b> {{ p.fecha_solicitud | slice:0:10 }}</div>
           <div><b>Desembolso:</b> {{ (p.fecha_desembolso | slice:0:10) || '—' }}</div>
+          <div><b>Garantía:</b> <span class="capitalize">{{ p.tipo_garantia || 'sin garantía' }}</span></div>
         </div>
         @if (p.observaciones) {
           <p class="text-sm text-ink"><b>Observaciones:</b> {{ p.observaciones }}</p>
@@ -93,6 +94,58 @@ import { KeycloakService } from '../../core/keycloak.service';
               </button>
             </div>
           </div>
+        }
+      </div>
+
+      <!-- Garantía: tipo + imágenes adjuntas -->
+      <div class="mb-5 rounded-lg bg-white p-5 shadow-sm">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 class="m-0 text-base font-semibold text-ink">
+            Garantía
+            @if (p.tipo_garantia) {
+              <span class="ml-2 rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-medium capitalize text-slate-700">{{ p.tipo_garantia }}</span>
+            } @else {
+              <span class="ml-2 text-sm font-normal text-muted">sin garantía</span>
+            }
+          </h3>
+          @if (puedeEditar()) {
+            <label class="cursor-pointer rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
+              + Imagen
+              <input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" (change)="onFile($event)">
+            </label>
+          }
+        </div>
+
+        @if (selectedName()) {
+          <div class="mb-3 flex flex-wrap items-center gap-2 rounded-md bg-slate-50 p-2 text-sm">
+            <span class="text-ink">{{ selectedName() }}</span>
+            <button (click)="doUpload()" [disabled]="uploading()"
+                    class="rounded-md bg-navy px-3 py-1 text-xs font-medium text-white hover:bg-navy-light disabled:opacity-50">
+              {{ uploading() ? 'Subiendo...' : 'Subir' }}
+            </button>
+            <button (click)="clearFile()" class="text-xs text-muted hover:underline">cancelar</button>
+          </div>
+        }
+        @if (uploadError()) { <p class="mb-3 rounded-md bg-red-50 p-3 text-sm text-red-600">{{ uploadError() }}</p> }
+
+        @if (garantias().length > 0) {
+          <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+            @for (g of garantias(); track g.id) {
+              <figure class="m-0 overflow-hidden rounded-lg border border-slate-200">
+                <a [href]="thumbs()[g.id]" target="_blank" rel="noopener">
+                  <img [src]="thumbs()[g.id]" [alt]="g.nombre_archivo" class="h-32 w-full bg-slate-100 object-cover"/>
+                </a>
+                <figcaption class="flex items-center justify-between gap-2 px-2 py-1 text-xs text-muted">
+                  <span class="truncate" [title]="g.nombre_archivo">{{ g.nombre_archivo }}</span>
+                  @if (puedeEditar()) {
+                    <button (click)="removeGarantia(g.id)" class="shrink-0 text-red-600 hover:underline" title="Eliminar">✕</button>
+                  }
+                </figcaption>
+              </figure>
+            }
+          </div>
+        } @else {
+          <p class="text-sm text-muted">Sin imágenes adjuntas.</p>
         }
       </div>
 
@@ -230,6 +283,18 @@ export class PrestamoDetail implements OnInit {
   // Clave de idempotencia del intento de pago en curso (estable entre reintentos).
   private payKey: string | null = null;
 
+  // Garantías (imágenes)
+  garantias = signal<Garantia[]>([]);
+  thumbs = signal<Record<string, string>>({}); // gid -> object URL
+  uploading = signal(false);
+  uploadError = signal<string | null>(null);
+  selectedName = signal<string | null>(null);
+  private selectedFile: File | null = null;
+  // Subir/eliminar garantías: cajero/admin (igual que el backend).
+  puedeEditar = computed(() =>
+    this.keycloak.roles().includes('admin') || this.keycloak.roles().includes('cajero'),
+  );
+
   // Color de badge por estado de préstamo o de cuota.
   badge(estado: string): string {
     switch (estado) {
@@ -257,6 +322,55 @@ export class PrestamoDetail implements OnInit {
 
   ngOnInit() {
     this.reload();
+    this.loadGarantias();
+  }
+
+  // ─── Garantías ───
+  loadGarantias() {
+    const id = this.route.snapshot.paramMap.get('id');
+    if (!id) return;
+    this.loanSvc.listGarantias(id).subscribe({
+      next: r => {
+        this.garantias.set(r.items);
+        // Revoca miniaturas anteriores y descarga las nuevas (autenticado → blob).
+        Object.values(this.thumbs()).forEach(u => URL.revokeObjectURL(u));
+        this.thumbs.set({});
+        for (const g of r.items) {
+          this.loanSvc.downloadGarantia(id, g.id).subscribe({
+            next: blob => this.thumbs.update(t => ({ ...t, [g.id]: URL.createObjectURL(blob) })),
+          });
+        }
+      },
+    });
+  }
+
+  onFile(ev: Event) {
+    const input = ev.target as HTMLInputElement;
+    this.selectedFile = input.files?.[0] ?? null;
+    this.selectedName.set(this.selectedFile?.name ?? null);
+    this.uploadError.set(null);
+  }
+
+  clearFile() {
+    this.selectedFile = null;
+    this.selectedName.set(null);
+  }
+
+  doUpload() {
+    const id = this.prestamo()?.id;
+    if (!id || !this.selectedFile) return;
+    this.uploading.set(true);
+    this.uploadError.set(null);
+    this.loanSvc.uploadGarantia(id, this.selectedFile).subscribe({
+      next: () => { this.uploading.set(false); this.clearFile(); this.loadGarantias(); },
+      error: e => { this.uploadError.set(e.error?.error || e.message); this.uploading.set(false); },
+    });
+  }
+
+  removeGarantia(gid: string) {
+    const id = this.prestamo()?.id;
+    if (!id) return;
+    this.loanSvc.deleteGarantia(id, gid).subscribe({ next: () => this.loadGarantias() });
   }
 
   reload() {
