@@ -144,8 +144,11 @@ services:
       CONSUL_PORT: 8500
       KEYCLOAK_URL: http://auth-service:8080
       LOG_LEVEL: info
+      GARANTIAS_STORE_PATH: /var/garantias
     ports:
       - "8082:8082"
+    volumes:
+      - garantiasstore:/var/garantias
     networks:
       - backend-net
       - data-net
@@ -432,3 +435,4 @@ volumes:
   grafanadata:
   prometheusdata:
   documentstore:
+  garantiasstore:

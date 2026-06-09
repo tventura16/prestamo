@@ -31,6 +31,11 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
+	if err := os.MkdirAll(cfg.GarantiasStorePath, 0o755); err != nil {
+		logger.Error("cannot create garantias store", "path", cfg.GarantiasStorePath, "err", err)
+		os.Exit(1)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -89,7 +94,9 @@ func main() {
 
 	prestamoRepo := repository.NewPrestamoRepository(pool)
 	cuotaRepo := repository.NewCuotaRepository(pool)
+	garantiaRepo := repository.NewGarantiaRepository(pool)
 	prestamoHandler := handler.NewPrestamoHandler(prestamoRepo, cuotaRepo, verifier)
+	garantiaHandler := handler.NewGarantiaHandler(garantiaRepo, cfg.GarantiasStorePath, verifier)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -116,6 +123,7 @@ func main() {
 		api.Use(verifier.Middleware())
 	}
 	prestamoHandler.Register(api.Group("/loans"))
+	garantiaHandler.Register(api.Group("/loans"))
 
 	// Job de mora: devenga interés moratorio y transiciona estados por
 	// vencimiento. Comparte el ctx del proceso para detenerse en el shutdown.

@@ -26,6 +26,9 @@ type Config struct {
 	// Job de mora: devengo automático y transiciones de estado por vencimiento.
 	MoraJobEnabled  bool
 	MoraJobInterval time.Duration
+
+	// Almacenamiento de imágenes de garantía.
+	GarantiasStorePath string
 }
 
 func Load() Config {
@@ -45,6 +48,7 @@ func Load() Config {
 		AuthEnabled:         getenv("AUTH_ENABLED", "true") == "true",
 		MoraJobEnabled:      getenv("MORA_JOB_ENABLED", "true") == "true",
 		MoraJobInterval:     parseDuration(getenv("MORA_JOB_INTERVAL", "24h"), 24*time.Hour),
+		GarantiasStorePath:  getenv("GARANTIAS_STORE_PATH", "/var/garantias"),
 	}
 }
 
