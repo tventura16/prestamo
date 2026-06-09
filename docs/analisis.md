@@ -279,6 +279,15 @@ El objetivo principal es controlar todo el ciclo del préstamo desde el registro
 
 ---
 
+## Usabilidad
+
+- interfaz **responsive (mobile-first)** construida con **Tailwind CSS v4**
+- navegación adaptable: menú colapsable (hamburguesa) en móvil y barra horizontal en escritorio
+- tablas con desplazamiento horizontal en pantallas pequeñas; formularios y grids que se apilan en móvil
+- estados de carga, error y vacío en todas las pantallas
+
+---
+
 # 7. Reglas de Negocio
 
 - un cliente puede tener múltiples préstamos
@@ -293,7 +302,7 @@ El objetivo principal es controlar todo el ciclo del préstamo desde el registro
 
 | Capa | Tecnología |
 |---|---|
-| Frontend | Angular 20 |
+| Frontend | Angular 20 + Tailwind CSS v4 (UI responsive) |
 | Arquitectura Backend | Microservicios |
 | Backend | Go 1.26 + Gin |
 | Seguridad | Keycloak 26 |
