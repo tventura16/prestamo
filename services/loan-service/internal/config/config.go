@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 )
 
 type Config struct {
@@ -21,6 +22,10 @@ type Config struct {
 	KeycloakRealm       string
 	KeycloakClientID    string
 	AuthEnabled         bool
+
+	// Job de mora: devengo automático y transiciones de estado por vencimiento.
+	MoraJobEnabled  bool
+	MoraJobInterval time.Duration
 }
 
 func Load() Config {
@@ -38,7 +43,19 @@ func Load() Config {
 		KeycloakRealm:       getenv("KEYCLOAK_REALM", "prestamos"),
 		KeycloakClientID:    getenv("KEYCLOAK_CLIENT_ID", "prestamos-frontend"),
 		AuthEnabled:         getenv("AUTH_ENABLED", "true") == "true",
+		MoraJobEnabled:      getenv("MORA_JOB_ENABLED", "true") == "true",
+		MoraJobInterval:     parseDuration(getenv("MORA_JOB_INTERVAL", "24h"), 24*time.Hour),
 	}
+}
+
+// parseDuration interpreta un valor tipo "24h"/"30m"; ante error o valor no
+// positivo cae al default indicado.
+func parseDuration(s string, def time.Duration) time.Duration {
+	d, err := time.ParseDuration(s)
+	if err != nil || d <= 0 {
+		return def
+	}
+	return d
 }
 
 func (c Config) PostgresDSN() string {

@@ -18,6 +18,7 @@ import (
 	"github.com/prestamos/loan-service/internal/config"
 	"github.com/prestamos/loan-service/internal/db"
 	"github.com/prestamos/loan-service/internal/handler"
+	"github.com/prestamos/loan-service/internal/mora"
 	"github.com/prestamos/loan-service/internal/repository"
 )
 
@@ -87,7 +88,7 @@ func main() {
 
 	prestamoRepo := repository.NewPrestamoRepository(pool)
 	cuotaRepo := repository.NewCuotaRepository(pool)
-	prestamoHandler := handler.NewPrestamoHandler(prestamoRepo, cuotaRepo)
+	prestamoHandler := handler.NewPrestamoHandler(prestamoRepo, cuotaRepo, verifier)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -113,6 +114,15 @@ func main() {
 		api.Use(verifier.Middleware())
 	}
 	prestamoHandler.Register(api.Group("/loans"))
+
+	// Job de mora: devenga interés moratorio y transiciona estados por
+	// vencimiento. Comparte el ctx del proceso para detenerse en el shutdown.
+	if cfg.MoraJobEnabled {
+		go mora.NewRunner(pool, logger).Schedule(ctx, cfg.MoraJobInterval)
+		logger.Info("scheduler de mora habilitado", "interval", cfg.MoraJobInterval.String())
+	} else {
+		logger.Warn("scheduler de mora deshabilitado")
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.ServicePort,
