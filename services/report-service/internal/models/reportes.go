@@ -7,33 +7,33 @@ import (
 )
 
 type Dashboard struct {
-	PrestamosActivos    int     `json:"prestamos_activos"`
-	PrestamosEnMora     int     `json:"prestamos_en_mora"`
-	ClientesActivos     int     `json:"clientes_activos"`
-	CuotasVencidas      int     `json:"cuotas_vencidas"`
-	IngresosMes         float64 `json:"ingresos_mes"`
-	IngresosHoy         float64 `json:"ingresos_hoy"`
-	CarteraOutstanding  float64 `json:"cartera_outstanding"`
+	PrestamosActivos   int     `json:"prestamos_activos"`
+	PrestamosEnMora    int     `json:"prestamos_en_mora"`
+	ClientesActivos    int     `json:"clientes_activos"`
+	CuotasVencidas     int     `json:"cuotas_vencidas"`
+	IngresosMes        float64 `json:"ingresos_mes"`
+	IngresosHoy        float64 `json:"ingresos_hoy"`
+	CarteraOutstanding float64 `json:"cartera_outstanding"`
 }
 
 type ReporteDiario struct {
-	Fecha            string  `json:"fecha"`
-	Ingresos         float64 `json:"ingresos"`
-	PagosRecibidos   int     `json:"pagos_recibidos"`
-	MoraCobrada      float64 `json:"mora_cobrada"`
-	PrestamosNuevos  int     `json:"prestamos_nuevos"`
-	ClientesNuevos   int     `json:"clientes_nuevos"`
+	Fecha           string  `json:"fecha"`
+	Ingresos        float64 `json:"ingresos"`
+	PagosRecibidos  int     `json:"pagos_recibidos"`
+	MoraCobrada     float64 `json:"mora_cobrada"`
+	PrestamosNuevos int     `json:"prestamos_nuevos"`
+	ClientesNuevos  int     `json:"clientes_nuevos"`
 }
 
 type ReporteMensual struct {
-	Anio              int     `json:"anio"`
-	Mes               int     `json:"mes"`
-	Ingresos          float64 `json:"ingresos"`
-	InteresesPagados  float64 `json:"intereses_pagados"`
-	MoraCobrada       float64 `json:"mora_cobrada"`
-	PrestamosNuevos   int     `json:"prestamos_nuevos"`
-	ClientesNuevos    int     `json:"clientes_nuevos"`
-	PagosRecibidos    int     `json:"pagos_recibidos"`
+	Anio             int     `json:"anio"`
+	Mes              int     `json:"mes"`
+	Ingresos         float64 `json:"ingresos"`
+	InteresesPagados float64 `json:"intereses_pagados"`
+	MoraCobrada      float64 `json:"mora_cobrada"`
+	PrestamosNuevos  int     `json:"prestamos_nuevos"`
+	ClientesNuevos   int     `json:"clientes_nuevos"`
+	PagosRecibidos   int     `json:"pagos_recibidos"`
 }
 
 type CuotaVencida struct {
@@ -49,26 +49,40 @@ type CuotaVencida struct {
 	Estado           string    `json:"estado"`
 }
 
+// ClienteInfo son los datos identificatorios del cliente (BD clientes).
+type ClienteInfo struct {
+	Nombres   string `json:"nombres"`
+	Apellidos string `json:"apellidos"`
+	CI        string `json:"ci"`
+	Telefono  string `json:"telefono,omitempty"`
+	Email     string `json:"email,omitempty"`
+	Estado    string `json:"estado"`
+}
+
 type ReporteCliente struct {
-	ClienteID          uuid.UUID         `json:"cliente_id"`
-	NumPrestamos       int               `json:"num_prestamos"`
-	PrestamosActivos   int               `json:"prestamos_activos"`
-	TotalPrestado      float64           `json:"total_prestado"`
-	TotalPagado        float64           `json:"total_pagado"`
-	SaldoTotal         float64           `json:"saldo_total"`
-	MoraTotal          float64           `json:"mora_total"`
-	CuotasVencidas     int               `json:"cuotas_vencidas"`
-	Prestamos          []PrestamoResumen `json:"prestamos"`
+	ClienteID        uuid.UUID    `json:"cliente_id"`
+	Cliente          *ClienteInfo `json:"cliente,omitempty"`
+	NumPrestamos     int          `json:"num_prestamos"`
+	PrestamosActivos int          `json:"prestamos_activos"`
+	TotalPrestado    float64      `json:"total_prestado"`
+	TotalPagado      float64      `json:"total_pagado"`
+	SaldoTotal       float64      `json:"saldo_total"`
+	MoraTotal        float64      `json:"mora_total"`
+	CuotasVencidas   int          `json:"cuotas_vencidas"`
+	// Elegibilidad para un nuevo préstamo según el historial (regla §7).
+	Elegible         bool              `json:"elegible_nuevo_prestamo"`
+	MotivoInelegible string            `json:"motivo_inelegible,omitempty"`
+	Prestamos        []PrestamoResumen `json:"prestamos"`
 }
 
 type PrestamoResumen struct {
-	ID               uuid.UUID `json:"id"`
-	MontoAprobado    *float64  `json:"monto_aprobado,omitempty"`
-	Estado           string    `json:"estado"`
-	NumCuotas        int       `json:"num_cuotas"`
-	CuotasPagadas    int       `json:"cuotas_pagadas"`
-	CuotasVencidas   int       `json:"cuotas_vencidas"`
-	SaldoPendiente   float64   `json:"saldo_pendiente"`
-	TotalPagado      float64   `json:"total_pagado"`
-	FechaSolicitud   time.Time `json:"fecha_solicitud"`
+	ID             uuid.UUID `json:"id"`
+	MontoAprobado  *float64  `json:"monto_aprobado,omitempty"`
+	Estado         string    `json:"estado"`
+	NumCuotas      int       `json:"num_cuotas"`
+	CuotasPagadas  int       `json:"cuotas_pagadas"`
+	CuotasVencidas int       `json:"cuotas_vencidas"`
+	SaldoPendiente float64   `json:"saldo_pendiente"`
+	TotalPagado    float64   `json:"total_pagado"`
+	FechaSolicitud time.Time `json:"fecha_solicitud"`
 }
