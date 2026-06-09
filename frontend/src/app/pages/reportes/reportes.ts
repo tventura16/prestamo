@@ -2,8 +2,10 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule, CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
-  ReportService, ReporteDiario, ReporteMensual, CuotaVencida,
+  ReportService, ReporteDiario, ReporteMensual, CuotaVencida, ExportFormat,
 } from '../../core/services/report.service';
+
+type ReportPath = 'daily' | 'monthly' | 'overdue';
 
 @Component({
   selector: 'app-reportes',
@@ -15,8 +17,12 @@ import {
     <div class="grid">
       <!-- ─── Reporte diario ─── -->
       <section class="card">
-        <header><h3>Reporte diario</h3>
-          <input type="date" [(ngModel)]="fecha" (change)="loadDiario()" />
+        <header>
+          <h3>Reporte diario</h3>
+          <div class="hdr-right">
+            <input type="date" [(ngModel)]="fecha" (change)="loadDiario()" />
+            <ng-container [ngTemplateOutlet]="dl" [ngTemplateOutletContext]="{ path: 'daily' }"></ng-container>
+          </div>
         </header>
         @if (loadingDiario()) { <p class="hint">Cargando...</p> }
         @if (diario(); as d) {
@@ -32,13 +38,17 @@ import {
 
       <!-- ─── Reporte mensual ─── -->
       <section class="card">
-        <header><h3>Reporte mensual</h3>
-          <span class="period">
-            <input type="number" min="2000" max="2100" [(ngModel)]="anio" (change)="loadMensual()" />
-            <select [(ngModel)]="mes" (change)="loadMensual()">
-              @for (m of meses; track m.v) { <option [value]="m.v">{{ m.n }}</option> }
-            </select>
-          </span>
+        <header>
+          <h3>Reporte mensual</h3>
+          <div class="hdr-right">
+            <span class="period">
+              <input type="number" min="2000" max="2100" [(ngModel)]="anio" (change)="loadMensual()" />
+              <select [(ngModel)]="mes" (change)="loadMensual()">
+                @for (m of meses; track m.v) { <option [value]="m.v">{{ m.n }}</option> }
+              </select>
+            </span>
+            <ng-container [ngTemplateOutlet]="dl" [ngTemplateOutletContext]="{ path: 'monthly' }"></ng-container>
+          </div>
         </header>
         @if (loadingMensual()) { <p class="hint">Cargando...</p> }
         @if (mensual(); as m) {
@@ -56,8 +66,12 @@ import {
 
     <!-- ─── Cuotas vencidas (mora) ─── -->
     <section class="card full">
-      <header><h3>Cuotas vencidas</h3>
-        <span class="hint">{{ totalVencidas() }} en mora</span>
+      <header>
+        <h3>Cuotas vencidas</h3>
+        <div class="hdr-right">
+          <span class="hint">{{ totalVencidas() }} en mora</span>
+          <ng-container [ngTemplateOutlet]="dl" [ngTemplateOutletContext]="{ path: 'overdue' }"></ng-container>
+        </div>
       </header>
       @if (loadingVencidas()) { <p class="hint">Cargando...</p> }
       <div class="table-wrap">
@@ -88,17 +102,34 @@ import {
         </table>
       </div>
     </section>
+
+    <!-- Grupo de botones de descarga reutilizable -->
+    <ng-template #dl let-path="path">
+      <span class="dl">
+        <span class="dl-label">Exportar</span>
+        <button class="dl-btn" (click)="descargar(path, 'csv')" [disabled]="descargando() === path + ':csv'">CSV</button>
+        <button class="dl-btn" (click)="descargar(path, 'xlsx')" [disabled]="descargando() === path + ':xlsx'">Excel</button>
+        <button class="dl-btn" (click)="descargar(path, 'pdf')" [disabled]="descargando() === path + ':pdf'">PDF</button>
+      </span>
+    </ng-template>
   `,
   styles: [`
     h2, h3 { color: #2d3748; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 16px; }
     .card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 16px; }
     .card.full { padding: 16px; }
-    .card header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
+    .card header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; flex-wrap: wrap; }
     .card h3 { margin: 0; font-size: 15px; }
+    .hdr-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .period { display: flex; gap: 6px; }
     input, select { padding: 5px 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 13px; }
     input[type=number] { width: 80px; }
+    .dl { display: inline-flex; align-items: center; gap: 4px; }
+    .dl-label { color: #a0aec0; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin-right: 2px; }
+    .dl-btn { border: 1px solid #cbd5e0; background: #f7fafc; color: #2c5282; border-radius: 6px;
+      padding: 4px 9px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .dl-btn:hover { background: #ebf8ff; border-color: #90cdf4; }
+    .dl-btn:disabled { opacity: 0.5; cursor: progress; }
     dl { margin: 0; display: grid; grid-template-columns: 1fr; gap: 4px; }
     dl div { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #edf2f7; }
     dt { color: #718096; font-size: 13px; }
@@ -139,6 +170,7 @@ export class Reportes implements OnInit {
   loadingDiario = signal(false);
   loadingMensual = signal(false);
   loadingVencidas = signal(false);
+  descargando = signal<string | null>(null);
   error = signal<string | null>(null);
 
   ngOnInit() {
@@ -169,5 +201,39 @@ export class Reportes implements OnInit {
       next: r => { this.vencidas.set(r.items); this.totalVencidas.set(r.total); this.loadingVencidas.set(false); },
       error: e => { this.error.set(e.error?.error || e.message); this.loadingVencidas.set(false); },
     });
+  }
+
+  // Descarga el reporte indicado con los parámetros del filtro vigente. El
+  // nombre de archivo se arma aquí para no depender de Content-Disposition.
+  descargar(path: ReportPath, format: ExportFormat) {
+    const mm = String(this.mes).padStart(2, '0');
+    const cfg: Record<ReportPath, { params: Record<string, string>; base: string }> = {
+      daily: { params: { date: this.fecha }, base: `reporte-diario-${this.fecha}` },
+      monthly: { params: { year: String(this.anio), month: String(this.mes) }, base: `reporte-mensual-${this.anio}-${mm}` },
+      overdue: { params: { limit: '100' }, base: `cuotas-vencidas-${this.fecha}` },
+    };
+    const { params, base } = cfg[path];
+
+    this.descargando.set(`${path}:${format}`);
+    this.error.set(null);
+    this.svc.export(path, format, params).subscribe({
+      next: blob => {
+        this.descargando.set(null);
+        this.saveBlob(blob, `${base}.${format}`);
+      },
+      error: () => {
+        this.descargando.set(null);
+        this.error.set('No se pudo descargar el reporte');
+      },
+    });
+  }
+
+  private saveBlob(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 }

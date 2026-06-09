@@ -69,4 +69,18 @@ export class ReportService {
       params: { year: String(year), month: String(month) },
     });
   }
+
+  /**
+   * Descarga un reporte en el formato dado como blob. Pasa por el interceptor
+   * que agrega el Bearer token (el gateway lo exige). El nombre de archivo lo
+   * arma el llamador para no depender de Content-Disposition vía CORS.
+   */
+  export(path: 'daily' | 'monthly' | 'overdue' | 'dashboard', format: ExportFormat, params: Record<string, string> = {}): Observable<Blob> {
+    return this.http.get(`${this.base}/${path}`, {
+      params: { ...params, format },
+      responseType: 'blob',
+    });
+  }
 }
+
+export type ExportFormat = 'csv' | 'xlsx' | 'pdf';
