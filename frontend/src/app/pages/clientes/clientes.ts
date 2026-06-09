@@ -1,11 +1,12 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ClienteService, Cliente, CreateClienteInput } from '../../core/services/client.service';
 
 @Component({
   selector: 'app-clientes',
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <div class="header">
       <h2>Clientes</h2>
@@ -77,20 +78,22 @@ import { ClienteService, Cliente, CreateClienteInput } from '../../core/services
             <th>Email</th>
             <th>Estado</th>
             <th>Creado</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           @for (c of items(); track c.id) {
             <tr>
-              <td>{{ c.nombres }} {{ c.apellidos }}</td>
+              <td><a [routerLink]="['/clientes', c.id]" class="name-link">{{ c.nombres }} {{ c.apellidos }}</a></td>
               <td><code>{{ c.ci }}</code></td>
               <td>{{ c.telefono || '—' }}</td>
               <td>{{ c.email || '—' }}</td>
               <td><span class="badge" [class]="'b-' + c.estado">{{ c.estado }}</span></td>
               <td class="muted">{{ c.created_at | slice:0:10 }}</td>
+              <td><a [routerLink]="['/clientes', c.id]" class="name-link">Historial →</a></td>
             </tr>
           } @empty {
-            <tr><td colspan="6" class="muted center">Sin clientes</td></tr>
+            <tr><td colspan="7" class="muted center">Sin clientes</td></tr>
           }
         </tbody>
       </table>
@@ -119,6 +122,8 @@ import { ClienteService, Cliente, CreateClienteInput } from '../../core/services
     td { border-bottom: 1px solid #edf2f7; }
     tr:last-child td { border-bottom: none; }
     code { background: #edf2f7; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+    .name-link { color: #2c5282; text-decoration: none; font-weight: 600; }
+    .name-link:hover { text-decoration: underline; }
     .badge { padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
     .b-activo { background: #c6f6d5; color: #22543d; }
     .b-inactivo { background: #e2e8f0; color: #4a5568; }
