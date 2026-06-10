@@ -5,17 +5,40 @@ import { ListResult } from './client.service';
 
 export type EstadoPrestamo = 'pendiente' | 'aprobado' | 'rechazado' | 'activo' | 'finalizado' | 'mora';
 export type Frecuencia = 'diaria' | 'semanal' | 'quincenal' | 'mensual';
-export type TipoGarantia = 'garante' | 'prendaria' | 'hipotecaria';
+export type SubtipoGarantia = 'vehiculo' | 'inmueble' | 'garante' | 'mueble';
 
-export interface Garantia {
+export interface GarantiaImagen {
   id: string;
-  prestamo_id: string;
+  garantia_id: string;
   nombre_archivo: string;
   mime: string;
   tamanio_bytes: number;
   descripcion?: string;
   subido_por?: string;
   created_at: string;
+}
+
+export interface Garantia {
+  id: string;
+  prestamo_id: string;
+  subtipo: SubtipoGarantia;
+  descripcion?: string;
+  valor_estimado?: number;
+  moneda: string;
+  cliente_garante_id?: string;
+  datos: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+  imagenes?: GarantiaImagen[];
+}
+
+export interface CreateGarantiaInput {
+  subtipo: SubtipoGarantia;
+  descripcion?: string;
+  valor_estimado?: number;
+  moneda?: string;
+  cliente_garante_id?: string;
+  datos: Record<string, any>;
 }
 
 export interface Prestamo {
@@ -32,7 +55,6 @@ export interface Prestamo {
   estado: EstadoPrestamo;
   aprobado_por?: string;
   observaciones?: string;
-  tipo_garantia?: TipoGarantia;
   created_at: string;
   updated_at: string;
 }
@@ -58,7 +80,6 @@ export interface CreatePrestamoInput {
   num_cuotas: number;
   frecuencia: Frecuencia;
   observaciones?: string;
-  tipo_garantia?: TipoGarantia;
 }
 
 export interface ApproveInput {
@@ -102,27 +123,36 @@ export class LoanService {
     return this.http.post<Prestamo>(`${this.base}/${id}/reject`, data);
   }
 
-  // ─── Garantías (imágenes adjuntas al préstamo) ───
+  // ─── Garantías (entidad con datos por subtipo) ───
 
   listGarantias(prestamoId: string): Observable<{ total: number; items: Garantia[] }> {
     return this.http.get<{ total: number; items: Garantia[] }>(`${this.base}/${prestamoId}/garantias`);
   }
 
-  /** Sube una imagen como multipart. No fijamos Content-Type: el navegador
-   *  agrega el boundary; el interceptor añade el Bearer. */
-  uploadGarantia(prestamoId: string, file: File, descripcion?: string): Observable<Garantia> {
-    const form = new FormData();
-    form.append('imagen', file);
-    if (descripcion) form.append('descripcion', descripcion);
-    return this.http.post<Garantia>(`${this.base}/${prestamoId}/garantias`, form);
-  }
-
-  /** Descarga autenticada de la imagen como blob. */
-  downloadGarantia(prestamoId: string, gid: string): Observable<Blob> {
-    return this.http.get(`${this.base}/${prestamoId}/garantias/${gid}/download`, { responseType: 'blob' });
+  createGarantia(prestamoId: string, data: CreateGarantiaInput): Observable<Garantia> {
+    return this.http.post<Garantia>(`${this.base}/${prestamoId}/garantias`, data);
   }
 
   deleteGarantia(prestamoId: string, gid: string): Observable<{ deleted: string }> {
     return this.http.delete<{ deleted: string }>(`${this.base}/${prestamoId}/garantias/${gid}`);
+  }
+
+  // ─── Imágenes de una garantía ───
+
+  /** Sube una imagen multipart. No fijamos Content-Type (el navegador agrega
+   *  el boundary); el interceptor añade el Bearer. */
+  uploadImagen(prestamoId: string, gid: string, file: File, descripcion?: string): Observable<GarantiaImagen> {
+    const form = new FormData();
+    form.append('imagen', file);
+    if (descripcion) form.append('descripcion', descripcion);
+    return this.http.post<GarantiaImagen>(`${this.base}/${prestamoId}/garantias/${gid}/imagenes`, form);
+  }
+
+  downloadImagen(prestamoId: string, gid: string, iid: string): Observable<Blob> {
+    return this.http.get(`${this.base}/${prestamoId}/garantias/${gid}/imagenes/${iid}/download`, { responseType: 'blob' });
+  }
+
+  deleteImagen(prestamoId: string, gid: string, iid: string): Observable<{ deleted: string }> {
+    return this.http.delete<{ deleted: string }>(`${this.base}/${prestamoId}/garantias/${gid}/imagenes/${iid}`);
   }
 }

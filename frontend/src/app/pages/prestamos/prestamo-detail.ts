@@ -3,7 +3,7 @@ import { CommonModule, CurrencyPipe } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 
-import { LoanService, Prestamo, Cuota, Garantia } from '../../core/services/loan.service';
+import { LoanService, Prestamo, Cuota, Garantia, SubtipoGarantia } from '../../core/services/loan.service';
 import { PaymentService, MetodoPago } from '../../core/services/payment.service';
 import { DocumentService } from '../../core/services/document.service';
 import { KeycloakService } from '../../core/keycloak.service';
@@ -32,7 +32,6 @@ import { KeycloakService } from '../../core/keycloak.service';
           <div><b>Cuotas:</b> {{ p.num_cuotas }} ({{ p.frecuencia }})</div>
           <div><b>Solicitud:</b> {{ p.fecha_solicitud | slice:0:10 }}</div>
           <div><b>Desembolso:</b> {{ (p.fecha_desembolso | slice:0:10) || '—' }}</div>
-          <div><b>Garantía:</b> <span class="capitalize">{{ p.tipo_garantia || 'sin garantía' }}</span></div>
         </div>
         @if (p.observaciones) {
           <p class="text-sm text-ink"><b>Observaciones:</b> {{ p.observaciones }}</p>
@@ -97,56 +96,114 @@ import { KeycloakService } from '../../core/keycloak.service';
         }
       </div>
 
-      <!-- Garantía: tipo + imágenes adjuntas -->
+      <!-- Garantías (entidades con datos por subtipo + imágenes) -->
       <div class="mb-5 rounded-lg bg-white p-5 shadow-sm">
         <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h3 class="m-0 text-base font-semibold text-ink">
-            Garantía
-            @if (p.tipo_garantia) {
-              <span class="ml-2 rounded-full bg-slate-200 px-2.5 py-0.5 text-xs font-medium capitalize text-slate-700">{{ p.tipo_garantia }}</span>
-            } @else {
-              <span class="ml-2 text-sm font-normal text-muted">sin garantía</span>
-            }
-          </h3>
+          <h3 class="m-0 text-base font-semibold text-ink">Garantías <span class="text-sm font-normal text-muted">({{ garantias().length }})</span></h3>
           @if (puedeEditar()) {
-            <label class="cursor-pointer rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
-              + Imagen
-              <input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" (change)="onFile($event)">
-            </label>
+            <button (click)="toggleNuevaGarantia()"
+                    class="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
+              {{ mostrarNueva() ? 'Cancelar' : '+ Garantía' }}
+            </button>
           }
         </div>
 
-        @if (selectedName()) {
-          <div class="mb-3 flex flex-wrap items-center gap-2 rounded-md bg-slate-50 p-2 text-sm">
-            <span class="text-ink">{{ selectedName() }}</span>
-            <button (click)="doUpload()" [disabled]="uploading()"
-                    class="rounded-md bg-navy px-3 py-1 text-xs font-medium text-white hover:bg-navy-light disabled:opacity-50">
-              {{ uploading() ? 'Subiendo...' : 'Subir' }}
-            </button>
-            <button (click)="clearFile()" class="text-xs text-muted hover:underline">cancelar</button>
+        <!-- Form nueva garantía -->
+        @if (mostrarNueva()) {
+          <div class="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label class="flex flex-col gap-1 text-sm text-slate-600">Tipo de garantía *
+                <select [(ngModel)]="nuevoSubtipo" (change)="onSubtipoChange()" name="subtipo" class="ui-input">
+                  <option value="vehiculo">Vehículo</option>
+                  <option value="inmueble">Inmueble (hipotecaria)</option>
+                  <option value="garante">Garante (fianza)</option>
+                  <option value="mueble">Bien mueble / mercadería</option>
+                </select>
+              </label>
+              <label class="flex flex-col gap-1 text-sm text-slate-600">Valor estimado (BOB)
+                <input type="number" min="0" step="0.01" [(ngModel)]="nuevoValor" name="valor" class="ui-input">
+              </label>
+            </div>
+            <!-- Campos dinámicos según subtipo -->
+            <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              @for (campo of camposActuales(); track campo.key) {
+                <label class="flex flex-col gap-1 text-sm text-slate-600">{{ campo.label }}{{ campo.required ? ' *' : '' }}
+                  <input [type]="campo.type || 'text'" [(ngModel)]="nuevoDatos[campo.key]" [name]="'d_' + campo.key" class="ui-input">
+                </label>
+              }
+            </div>
+            <label class="mt-3 flex flex-col gap-1 text-sm text-slate-600">Descripción / observación
+              <input [(ngModel)]="nuevoDescripcion" name="g_desc" class="ui-input">
+            </label>
+            @if (nuevaError()) { <p class="mt-2 rounded-md bg-red-50 p-3 text-sm text-red-600">{{ nuevaError() }}</p> }
+            <div class="mt-3 flex flex-wrap justify-end gap-2">
+              <button (click)="toggleNuevaGarantia()" class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">Cancelar</button>
+              <button (click)="crearGarantia()" [disabled]="guardandoGarantia()"
+                      class="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white hover:bg-navy-light disabled:opacity-50">
+                {{ guardandoGarantia() ? 'Guardando...' : 'Agregar garantía' }}
+              </button>
+            </div>
           </div>
         }
-        @if (uploadError()) { <p class="mb-3 rounded-md bg-red-50 p-3 text-sm text-red-600">{{ uploadError() }}</p> }
 
-        @if (garantias().length > 0) {
-          <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-            @for (g of garantias(); track g.id) {
-              <figure class="m-0 overflow-hidden rounded-lg border border-slate-200">
-                <a [href]="thumbs()[g.id]" target="_blank" rel="noopener">
-                  <img [src]="thumbs()[g.id]" [alt]="g.nombre_archivo" class="h-32 w-full bg-slate-100 object-cover"/>
-                </a>
-                <figcaption class="flex items-center justify-between gap-2 px-2 py-1 text-xs text-muted">
-                  <span class="truncate" [title]="g.nombre_archivo">{{ g.nombre_archivo }}</span>
-                  @if (puedeEditar()) {
-                    <button (click)="removeGarantia(g.id)" class="shrink-0 text-red-600 hover:underline" title="Eliminar">✕</button>
-                  }
-                </figcaption>
-              </figure>
-            }
-          </div>
-        } @else {
-          <p class="text-sm text-muted">Sin imágenes adjuntas.</p>
+        @if (garantias().length === 0 && !mostrarNueva()) {
+          <p class="text-sm text-muted">Sin garantías registradas.</p>
         }
+
+        <!-- Lista de garantías -->
+        <div class="flex flex-col gap-4">
+          @for (g of garantias(); track g.id) {
+            <div class="rounded-lg border border-slate-200 p-4">
+              <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                  <span class="rounded-full bg-navy px-2.5 py-0.5 text-xs font-medium capitalize text-white">{{ subtipoLabel(g.subtipo) }}</span>
+                  @if (g.valor_estimado) {
+                    <span class="text-sm text-muted">{{ g.valor_estimado | currency:g.moneda:'symbol-narrow':'1.2-2' }}</span>
+                  }
+                </div>
+                <div class="flex items-center gap-2">
+                  @if (puedeEditar()) {
+                    <label class="cursor-pointer text-xs text-navy-light hover:underline">
+                      + imagen
+                      <input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" (change)="onFileGarantia($event, g.id)">
+                    </label>
+                    <button (click)="eliminarGarantia(g.id)" class="text-xs text-red-600 hover:underline">eliminar</button>
+                  }
+                </div>
+              </div>
+              <!-- Datos del subtipo -->
+              <div class="mb-2 grid grid-cols-1 gap-x-6 gap-y-1 text-sm text-ink sm:grid-cols-2">
+                @for (campo of camposDe(g.subtipo); track campo.key) {
+                  @if (g.datos[campo.key]) {
+                    <div><b>{{ campo.label }}:</b> {{ g.datos[campo.key] }}</div>
+                  }
+                }
+              </div>
+              @if (g.descripcion) { <p class="mb-2 text-sm text-muted">{{ g.descripcion }}</p> }
+              @if (subiendoEn() === g.id) { <p class="mb-2 text-xs text-muted">Subiendo imagen...</p> }
+              <!-- Galería de imágenes de esta garantía -->
+              @if (g.imagenes && g.imagenes.length > 0) {
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                  @for (img of g.imagenes; track img.id) {
+                    <figure class="m-0 overflow-hidden rounded-lg border border-slate-200">
+                      <a [href]="thumbs()[img.id]" target="_blank" rel="noopener">
+                        <img [src]="thumbs()[img.id]" [alt]="img.nombre_archivo" class="h-28 w-full bg-slate-100 object-cover"/>
+                      </a>
+                      <figcaption class="flex items-center justify-between gap-1 px-2 py-1 text-xs text-muted">
+                        <span class="truncate" [title]="img.nombre_archivo">{{ img.nombre_archivo }}</span>
+                        @if (puedeEditar()) {
+                          <button (click)="eliminarImagen(g.id, img.id)" class="shrink-0 text-red-600 hover:underline">✕</button>
+                        }
+                      </figcaption>
+                    </figure>
+                  }
+                </div>
+              } @else {
+                <p class="text-xs text-muted">Sin imágenes.</p>
+              }
+            </div>
+          }
+        </div>
       </div>
 
       <h3 class="mb-3 text-base font-semibold text-ink">Plan de pagos</h3>
@@ -283,17 +340,63 @@ export class PrestamoDetail implements OnInit {
   // Clave de idempotencia del intento de pago en curso (estable entre reintentos).
   private payKey: string | null = null;
 
-  // Garantías (imágenes)
+  // ─── Garantías ───
   garantias = signal<Garantia[]>([]);
-  thumbs = signal<Record<string, string>>({}); // gid -> object URL
-  uploading = signal(false);
-  uploadError = signal<string | null>(null);
-  selectedName = signal<string | null>(null);
-  private selectedFile: File | null = null;
-  // Subir/eliminar garantías: cajero/admin (igual que el backend).
+  thumbs = signal<Record<string, string>>({}); // imagen.id -> object URL
+  // Subir/editar garantías: cajero/admin (igual que el backend).
   puedeEditar = computed(() =>
     this.keycloak.roles().includes('admin') || this.keycloak.roles().includes('cajero'),
   );
+
+  // Form de nueva garantía
+  mostrarNueva = signal(false);
+  guardandoGarantia = signal(false);
+  nuevaError = signal<string | null>(null);
+  subiendoEn = signal<string | null>(null); // gid en subida de imagen
+  nuevoSubtipo: SubtipoGarantia = 'vehiculo';
+  nuevoValor: number | null = null;
+  nuevoDescripcion = '';
+  nuevoDatos: Record<string, any> = {};
+
+  // Campos de cada subtipo (deben coincidir con la validación del backend).
+  private readonly camposPorSubtipo: Record<SubtipoGarantia, { key: string; label: string; required?: boolean; type?: string }[]> = {
+    vehiculo: [
+      { key: 'placa', label: 'Placa', required: true },
+      { key: 'marca', label: 'Marca', required: true },
+      { key: 'modelo', label: 'Modelo' },
+      { key: 'anio', label: 'Año', type: 'number' },
+      { key: 'color', label: 'Color' },
+      { key: 'nro_motor', label: 'Nº motor' },
+      { key: 'nro_chasis', label: 'Nº chasis' },
+    ],
+    inmueble: [
+      { key: 'tipo_inmueble', label: 'Tipo (casa/terreno/local)', required: true },
+      { key: 'direccion', label: 'Dirección', required: true },
+      { key: 'matricula_folio', label: 'Matrícula / folio' },
+      { key: 'superficie_m2', label: 'Superficie (m²)', type: 'number' },
+      { key: 'gravamenes', label: 'Gravámenes' },
+    ],
+    garante: [
+      { key: 'nombres', label: 'Nombres', required: true },
+      { key: 'apellidos', label: 'Apellidos' },
+      { key: 'ci', label: 'CI', required: true },
+      { key: 'telefono', label: 'Teléfono' },
+      { key: 'direccion', label: 'Dirección' },
+      { key: 'actividad', label: 'Actividad' },
+    ],
+    mueble: [
+      { key: 'descripcion', label: 'Descripción', required: true },
+      { key: 'ubicacion', label: 'Ubicación' },
+      { key: 'marca', label: 'Marca' },
+      { key: 'cantidad', label: 'Cantidad', type: 'number' },
+    ],
+  };
+
+  camposActuales() { return this.camposPorSubtipo[this.nuevoSubtipo]; }
+  camposDe(subtipo: SubtipoGarantia) { return this.camposPorSubtipo[subtipo]; }
+  subtipoLabel(s: SubtipoGarantia): string {
+    return { vehiculo: 'Vehículo', inmueble: 'Inmueble', garante: 'Garante', mueble: 'Bien mueble' }[s] ?? s;
+  }
 
   // Color de badge por estado de préstamo o de cuota.
   badge(estado: string): string {
@@ -332,45 +435,88 @@ export class PrestamoDetail implements OnInit {
     this.loanSvc.listGarantias(id).subscribe({
       next: r => {
         this.garantias.set(r.items);
-        // Revoca miniaturas anteriores y descarga las nuevas (autenticado → blob).
+        // Revoca miniaturas anteriores y descarga las imágenes (autenticado → blob).
         Object.values(this.thumbs()).forEach(u => URL.revokeObjectURL(u));
         this.thumbs.set({});
         for (const g of r.items) {
-          this.loanSvc.downloadGarantia(id, g.id).subscribe({
-            next: blob => this.thumbs.update(t => ({ ...t, [g.id]: URL.createObjectURL(blob) })),
-          });
+          for (const img of g.imagenes ?? []) {
+            this.loanSvc.downloadImagen(id, g.id, img.id).subscribe({
+              next: blob => this.thumbs.update(t => ({ ...t, [img.id]: URL.createObjectURL(blob) })),
+            });
+          }
         }
       },
     });
   }
 
-  onFile(ev: Event) {
-    const input = ev.target as HTMLInputElement;
-    this.selectedFile = input.files?.[0] ?? null;
-    this.selectedName.set(this.selectedFile?.name ?? null);
-    this.uploadError.set(null);
+  toggleNuevaGarantia() {
+    this.mostrarNueva.update(v => !v);
+    this.nuevaError.set(null);
+    if (this.mostrarNueva()) this.resetNueva();
   }
 
-  clearFile() {
-    this.selectedFile = null;
-    this.selectedName.set(null);
+  onSubtipoChange() {
+    this.nuevoDatos = {};
+    this.nuevaError.set(null);
   }
 
-  doUpload() {
+  private resetNueva() {
+    this.nuevoSubtipo = 'vehiculo';
+    this.nuevoValor = null;
+    this.nuevoDescripcion = '';
+    this.nuevoDatos = {};
+  }
+
+  crearGarantia() {
     const id = this.prestamo()?.id;
-    if (!id || !this.selectedFile) return;
-    this.uploading.set(true);
-    this.uploadError.set(null);
-    this.loanSvc.uploadGarantia(id, this.selectedFile).subscribe({
-      next: () => { this.uploading.set(false); this.clearFile(); this.loadGarantias(); },
-      error: e => { this.uploadError.set(e.error?.error || e.message); this.uploading.set(false); },
+    if (!id) return;
+    // Normaliza numéricos (año, superficie, cantidad) según el catálogo.
+    const datos: Record<string, any> = {};
+    for (const campo of this.camposActuales()) {
+      const v = this.nuevoDatos[campo.key];
+      if (v === undefined || v === null || v === '') continue;
+      datos[campo.key] = campo.type === 'number' ? Number(v) : v;
+    }
+    this.guardandoGarantia.set(true);
+    this.nuevaError.set(null);
+    this.loanSvc.createGarantia(id, {
+      subtipo: this.nuevoSubtipo,
+      descripcion: this.nuevoDescripcion || undefined,
+      valor_estimado: this.nuevoValor ?? undefined,
+      datos,
+    }).subscribe({
+      next: () => {
+        this.guardandoGarantia.set(false);
+        this.mostrarNueva.set(false);
+        this.loadGarantias();
+      },
+      error: e => { this.nuevaError.set(e.error?.error || e.message); this.guardandoGarantia.set(false); },
     });
   }
 
-  removeGarantia(gid: string) {
+  eliminarGarantia(gid: string) {
     const id = this.prestamo()?.id;
     if (!id) return;
     this.loanSvc.deleteGarantia(id, gid).subscribe({ next: () => this.loadGarantias() });
+  }
+
+  onFileGarantia(ev: Event, gid: string) {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = ''; // permite re-seleccionar el mismo archivo
+    const id = this.prestamo()?.id;
+    if (!file || !id) return;
+    this.subiendoEn.set(gid);
+    this.loanSvc.uploadImagen(id, gid, file).subscribe({
+      next: () => { this.subiendoEn.set(null); this.loadGarantias(); },
+      error: () => { this.subiendoEn.set(null); },
+    });
+  }
+
+  eliminarImagen(gid: string, iid: string) {
+    const id = this.prestamo()?.id;
+    if (!id) return;
+    this.loanSvc.deleteImagen(id, gid, iid).subscribe({ next: () => this.loadGarantias() });
   }
 
   reload() {
