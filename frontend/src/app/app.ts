@@ -11,6 +11,15 @@ import { KeycloakService } from './core/keycloak.service';
 export class App {
   protected readonly title = signal('Sistema de Préstamos');
   protected readonly kc = inject(KeycloakService);
+  protected readonly menuOpen = signal(false);
+
+  toggleMenu(): void {
+    this.menuOpen.update((v) => !v);
+  }
+
+  closeMenu(): void {
+    this.menuOpen.set(false);
+  }
 
   logout(): void {
     this.kc.logout();

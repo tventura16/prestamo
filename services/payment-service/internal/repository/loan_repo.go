@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -14,9 +15,10 @@ import (
 )
 
 var (
-	ErrCuotaNotFound = errors.New("cuota no encontrada")
-	ErrCuotaPagada   = errors.New("la cuota ya está pagada")
-	ErrOverpayment   = errors.New("el monto excede lo adeudado en la cuota")
+	ErrCuotaNotFound        = errors.New("cuota no encontrada")
+	ErrCuotaPagada          = errors.New("la cuota ya está pagada")
+	ErrOverpayment          = errors.New("el monto excede lo adeudado en la cuota")
+	ErrAplicacionNoConcilia = errors.New("el pago aún no fue aplicado a la cuota; reintente la anulación")
 )
 
 // LoanRepository accede a la DB "prestamos" (cuotas + prestamos) desde el
@@ -32,17 +34,17 @@ func NewLoanRepository(pool *pgxpool.Pool) *LoanRepository {
 
 // CuotaSnapshot es el estado de una cuota leído bajo lock.
 type CuotaSnapshot struct {
-	ID               uuid.UUID
-	PrestamoID       uuid.UUID
-	Numero           int
-	Capital          float64
-	Interes          float64
-	Total            float64
-	SaldoPendiente   float64
-	MoraAcumulada    float64
-	Estado           string
-	ClienteID        uuid.UUID
-	EstadoPrestamo   string
+	ID             uuid.UUID
+	PrestamoID     uuid.UUID
+	Numero         int
+	Capital        float64
+	Interes        float64
+	Total          float64
+	SaldoPendiente float64
+	MoraAcumulada  float64
+	Estado         string
+	ClienteID      uuid.UUID
+	EstadoPrestamo string
 }
 
 // LockCuotaWithPrestamo lee la cuota + cliente + estado del préstamo bajo
@@ -106,13 +108,13 @@ type ApplyResult struct {
 // saldo de la cuota, usado tanto por el fast-path inline como por el consumer
 // del outbox.
 //
-//	1. Guard: si pago_aplicaciones ya tiene el pago_id → no reaplica (Skipped).
-//	2. SELECT FOR UPDATE de la cuota: serializa pagos concurrentes.
-//	3. Clampa los montos al saldo/mora vivos (un pago concurrente pudo
-//	   reducir el saldo desde que se calculó la distribución).
-//	4. Actualiza la cuota; si queda saldada y todas las del préstamo también,
-//	   marca el préstamo como finalizado.
-//	5. Inserta el guard de idempotencia.
+//  1. Guard: si pago_aplicaciones ya tiene el pago_id → no reaplica (Skipped).
+//  2. SELECT FOR UPDATE de la cuota: serializa pagos concurrentes.
+//  3. Clampa los montos al saldo/mora vivos (un pago concurrente pudo
+//     reducir el saldo desde que se calculó la distribución).
+//  4. Actualiza la cuota; si queda saldada y todas las del préstamo también,
+//     marca el préstamo como finalizado.
+//  5. Inserta el guard de idempotencia.
 func (r *LoanRepository) ApplyPagoToCuota(ctx context.Context, tx pgx.Tx, app PagoAplicacion) (ApplyResult, error) {
 	// 1. Guard de idempotencia.
 	var exists bool
@@ -208,6 +210,126 @@ func (r *LoanRepository) ApplyPagoToCuota(ctx context.Context, tx pgx.Tx, app Pa
 	}
 
 	return ApplyResult{Cuota: info, Prestamo: prestamoInfo}, nil
+}
+
+// ReversedAmounts son los montos que efectivamente se devolvieron a la cuota
+// al revertir un pago (leídos del ledger pago_aplicaciones). El service los
+// necesita para construir el evento pago.anulado.
+type ReversedAmounts struct {
+	Capital float64
+	Interes float64
+	Mora    float64
+}
+
+// ReversePagoFromCuota deshace la aplicación de un pago a su cuota de forma
+// IDEMPOTENTE dentro de la transacción dada (DB prestamos). Es el simétrico de
+// ApplyPagoToCuota y el único punto que revierte el saldo de una cuota, usado
+// tanto por el fast-path inline de la anulación como por el consumer del outbox.
+//
+//  1. Lee del ledger los montos realmente aplicados (con lock). Si no hay
+//     registro, el pago no llegó a aplicarse → ErrAplicacionNoConcilia.
+//  2. Guard de idempotencia: si reverted_at ya tiene valor → no revierte de
+//     nuevo (Skipped).
+//  3. Devuelve capital+interés al saldo y la mora cobrada a mora_acumulada.
+//  4. Recalcula el estado de la cuota (deja de estar 'pagada'); si la fecha ya
+//     venció queda 'vencida' (el job de mora retomará el devengo).
+//  5. Reactiva el préstamo si estaba 'finalizado'.
+//  6. Sella reverted_at.
+func (r *LoanRepository) ReversePagoFromCuota(ctx context.Context, tx pgx.Tx, pagoID uuid.UUID) (ApplyResult, ReversedAmounts, error) {
+	// 1. Montos aplicados desde el ledger, bajo lock.
+	var cuotaID uuid.UUID
+	var aplCapital, aplInteres, aplMora float64
+	var revertedAt *time.Time
+	err := tx.QueryRow(ctx, `
+		SELECT cuota_id, capital, interes, mora, reverted_at
+		FROM pago_aplicaciones WHERE pago_id = $1
+		FOR UPDATE`, pagoID,
+	).Scan(&cuotaID, &aplCapital, &aplInteres, &aplMora, &revertedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ApplyResult{}, ReversedAmounts{}, ErrAplicacionNoConcilia
+		}
+		return ApplyResult{}, ReversedAmounts{}, fmt.Errorf("lock aplicacion: %w", err)
+	}
+	amounts := ReversedAmounts{Capital: aplCapital, Interes: aplInteres, Mora: aplMora}
+
+	// 2. Ya revertido → idempotente.
+	if revertedAt != nil {
+		cuota, prestamo, err := r.readCuotaPrestamo(ctx, tx, cuotaID)
+		if err != nil {
+			return ApplyResult{}, ReversedAmounts{}, err
+		}
+		return ApplyResult{Cuota: cuota, Prestamo: prestamo, Skipped: true}, amounts, nil
+	}
+
+	// 3. Lock de la cuota + datos para recalcular estado.
+	var saldo, mora, total float64
+	var prestamoID uuid.UUID
+	var numero int
+	var estadoPrestamo string
+	var vencida bool
+	err = tx.QueryRow(ctx, `
+		SELECT c.prestamo_id, c.numero, c.saldo_pendiente, c.mora_acumulada,
+		       c.total, (c.fecha_vencimiento < CURRENT_DATE), p.estado
+		FROM cuotas c JOIN prestamos p ON p.id = c.prestamo_id
+		WHERE c.id = $1
+		FOR UPDATE OF c, p`, cuotaID,
+	).Scan(&prestamoID, &numero, &saldo, &mora, &total, &vencida, &estadoPrestamo)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ApplyResult{}, ReversedAmounts{}, ErrCuotaNotFound
+		}
+		return ApplyResult{}, ReversedAmounts{}, fmt.Errorf("lock cuota: %w", err)
+	}
+
+	newSaldo := round2(saldo + aplCapital + aplInteres)
+	newMora := round2(mora + aplMora)
+
+	// 4. Recalcular estado.
+	estado := "pendiente"
+	switch {
+	case newSaldo <= 0.005 && newMora <= 0.005:
+		estado = "pagada"
+	case vencida:
+		estado = "vencida"
+	case newSaldo+0.005 < total:
+		estado = "parcial"
+	}
+
+	var info models.CuotaInfo
+	query := `UPDATE cuotas SET saldo_pendiente = $1, mora_acumulada = $2, estado = $3`
+	if estado == "pagada" {
+		query += ` WHERE id = $4`
+	} else {
+		query += `, fecha_pago = NULL WHERE id = $4`
+	}
+	query += ` RETURNING id, prestamo_id, numero, saldo_pendiente, mora_acumulada, estado`
+	if err := tx.QueryRow(ctx, query, newSaldo, newMora, estado, cuotaID).Scan(
+		&info.ID, &info.PrestamoID, &info.Numero,
+		&info.SaldoPendiente, &info.MoraAcumulada, &info.Estado,
+	); err != nil {
+		return ApplyResult{}, ReversedAmounts{}, fmt.Errorf("update cuota: %w", err)
+	}
+
+	// 5. Reactivar préstamo finalizado (el job de mora lo pasará a mora si aplica).
+	prestamoInfo := models.PrestamoInfo{ID: prestamoID, Estado: estadoPrestamo}
+	if estadoPrestamo == "finalizado" {
+		if err := tx.QueryRow(ctx,
+			`UPDATE prestamos SET estado = 'activo' WHERE id = $1 RETURNING id, estado`,
+			prestamoID,
+		).Scan(&prestamoInfo.ID, &prestamoInfo.Estado); err != nil {
+			return ApplyResult{}, ReversedAmounts{}, fmt.Errorf("reactivar prestamo: %w", err)
+		}
+	}
+
+	// 6. Sellar la reversión (guard de idempotencia).
+	if _, err := tx.Exec(ctx,
+		`UPDATE pago_aplicaciones SET reverted_at = NOW() WHERE pago_id = $1`, pagoID,
+	); err != nil {
+		return ApplyResult{}, ReversedAmounts{}, fmt.Errorf("sellar reversion: %w", err)
+	}
+
+	return ApplyResult{Cuota: info, Prestamo: prestamoInfo}, amounts, nil
 }
 
 // readCuotaPrestamo lee el estado actual (sin lock) para respuestas idempotentes.

@@ -9,24 +9,28 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/prestamos/client-service/internal/auth"
 	"github.com/prestamos/client-service/internal/models"
 	"github.com/prestamos/client-service/internal/repository"
 )
 
 type ClienteHandler struct {
-	repo *repository.ClienteRepository
+	repo     *repository.ClienteRepository
+	verifier *auth.Verifier
 }
 
-func NewClienteHandler(repo *repository.ClienteRepository) *ClienteHandler {
-	return &ClienteHandler{repo: repo}
+func NewClienteHandler(repo *repository.ClienteRepository, verifier *auth.Verifier) *ClienteHandler {
+	return &ClienteHandler{repo: repo, verifier: verifier}
 }
 
+// Register monta las rutas de clientes con autorización por rol (alcance §4):
+// consulta abierta a cualquier rol; alta/edición para cajero; borrado solo admin.
 func (h *ClienteHandler) Register(rg *gin.RouterGroup) {
-	rg.GET("", h.List)
-	rg.POST("", h.Create)
-	rg.GET("/:id", h.Get)
-	rg.PUT("/:id", h.Update)
-	rg.DELETE("/:id", h.Delete)
+	rg.GET("", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.List)
+	rg.POST("", h.verifier.GuardRole("admin", "cajero"), h.Create)
+	rg.GET("/:id", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.Get)
+	rg.PUT("/:id", h.verifier.GuardRole("admin", "cajero"), h.Update)
+	rg.DELETE("/:id", h.verifier.GuardRole("admin"), h.Delete)
 }
 
 func (h *ClienteHandler) Create(c *gin.Context) {

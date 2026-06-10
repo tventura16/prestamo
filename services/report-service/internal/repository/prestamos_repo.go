@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,6 +18,35 @@ type PrestamosRepository struct {
 
 func NewPrestamosRepository(pool *pgxpool.Pool) *PrestamosRepository {
 	return &PrestamosRepository{pool: pool}
+}
+
+// ParametrosElegibilidad lee de parametros_sistema (BD prestamos) los criterios
+// para evaluar si un cliente puede tomar un nuevo préstamo. Devuelve defaults
+// razonables si la tabla o las claves no existieran.
+func (r *PrestamosRepository) ParametrosElegibilidad(ctx context.Context) (aprobarSiMora bool, maxActivos int, err error) {
+	aprobarSiMora, maxActivos = false, 3
+	rows, err := r.pool.Query(ctx,
+		`SELECT clave, valor FROM parametros_sistema
+		 WHERE clave IN ('aprobar_si_mora_activa', 'max_prestamos_activos')`)
+	if err != nil {
+		return aprobarSiMora, maxActivos, nil // tolerante: usa defaults
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var clave, valor string
+		if err := rows.Scan(&clave, &valor); err != nil {
+			continue
+		}
+		switch clave {
+		case "aprobar_si_mora_activa":
+			aprobarSiMora = valor == "true"
+		case "max_prestamos_activos":
+			if n, e := strconv.Atoi(valor); e == nil {
+				maxActivos = n
+			}
+		}
+	}
+	return aprobarSiMora, maxActivos, nil
 }
 
 // CountByEstado cuenta préstamos por estado.

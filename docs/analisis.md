@@ -279,6 +279,15 @@ El objetivo principal es controlar todo el ciclo del préstamo desde el registro
 
 ---
 
+## Usabilidad
+
+- interfaz **responsive (mobile-first)** construida con **Tailwind CSS v4**
+- navegación adaptable: menú colapsable (hamburguesa) en móvil y barra horizontal en escritorio
+- tablas con desplazamiento horizontal en pantallas pequeñas; formularios y grids que se apilan en móvil
+- estados de carga, error y vacío en todas las pantallas
+
+---
+
 # 7. Reglas de Negocio
 
 - un cliente puede tener múltiples préstamos
@@ -293,7 +302,7 @@ El objetivo principal es controlar todo el ciclo del préstamo desde el registro
 
 | Capa | Tecnología |
 |---|---|
-| Frontend | Angular 20 |
+| Frontend | Angular 20 + Tailwind CSS v4 (UI responsive) |
 | Arquitectura Backend | Microservicios |
 | Backend | Go 1.26 + Gin |
 | Seguridad | Keycloak 26 |
@@ -614,3 +623,73 @@ Cada microservicio recibe configuración vía variables de entorno o secretos:
 - **Actualizaciones:** despliegue por servicio con `docker compose up -d --no-deps <servicio>`.
 - **Backups:** volúmenes respaldados periódicamente (PostgreSQL, documentos generados).
 - **Migración futura:** la arquitectura queda preparada para migrar a Kubernetes si el crecimiento lo requiere.
+
+---
+
+# 11. Estado de Implementación
+
+Capacidades implementadas y verificadas sobre la arquitectura descrita, con su
+ubicación técnica principal.
+
+## 11.1 Autorización por rol (RBAC)
+
+- Validación del JWT de Keycloak en el borde (Kong, plugin `jwt`) **y** control
+  de rol **por endpoint** en cada microservicio (`admin` / `supervisor` / `cajero`).
+- Middleware nil-safe `Verifier.GuardRole(...)`: actúa como passthrough cuando
+  `AUTH_ENABLED=false` (desarrollo), sin romper el flujo local.
+- Reparto (§4): el cajero registra clientes y pagos; el supervisor aprueba/rechaza
+  préstamos y consulta reportes; el admin tiene acceso total.
+
+## 11.2 Control de mora automático (loan-service)
+
+- Job programado (`internal/mora`) que en cada intervalo (`MORA_JOB_INTERVAL`,
+  por defecto 24h): devenga interés moratorio sobre cuotas vencidas (parámetros
+  `tasa_mora_diaria` y `dias_gracia_mora`), marca las cuotas como `vencida` y
+  transiciona los préstamos `activo` ↔ `mora` (incluida la regularización).
+- Devengo **idempotente** (columna `mora_aplicada_hasta`) y seguro ante réplicas
+  (`pg_try_advisory_xact_lock`).
+- Migración: `db/init/09-mora-control.sql`.
+
+## 11.3 Anulación de pagos (payment-service)
+
+- `POST /payments/{id}/void` (supervisor/admin): anula el pago **sin borrarlo**
+  (auditoría inmutable: `anulado_at`, `anulado_por`, `motivo_anulacion`) y
+  **revierte de forma compensatoria** su aplicación a la cuota.
+- Mismo patrón que el registro: evento `pago.anulado` por outbox + reconciliación
+  por el consumer; reversión **idempotente** vía `pago_aplicaciones.reverted_at`.
+- El pipeline de eventos enruta por `event_type` (header Kafka).
+- Migración: `db/init/10-pago-reversion.sql`.
+
+## 11.4 Exportación de reportes (report-service)
+
+- Todos los endpoints de reportes aceptan `?format=json|csv|xlsx|pdf` (RF-016).
+- CSV (stdlib), **XLSX** (`excelize`) y **PDF** (`gofpdf`); descarga con
+  cabecera `Content-Disposition`.
+- Frontend: botones de descarga (CSV/Excel/PDF) por sección en la pantalla de Reportes.
+
+## 11.5 Historial crediticio del cliente
+
+- `GET /reports/clients/{id}` consolida datos del cliente + resumen (préstamos,
+  total prestado/pagado, saldo, mora, cuotas vencidas) + **veredicto de
+  elegibilidad** para un nuevo préstamo.
+- Regla de negocio §7 aplicada: el loan-service **rechaza la aprobación** si el
+  cliente tiene mora activa (cuotas vencidas impagas), salvo que el parámetro
+  `aprobar_si_mora_activa` lo permita.
+- Frontend: pantalla `/clientes/:id` con perfil, listado de préstamos e historial de pagos.
+
+## 11.6 Documentación de APIs — OpenAPI 3.1
+
+- Cada microservicio publica su contrato **OpenAPI 3.1** en `/openapi.yaml`
+  (embebido con `go:embed`, fuente de verdad del contrato) y una UI **Swagger**
+  en `/docs`, ambas públicas dentro de la red.
+
+## 11.7 Frontend
+
+- UI migrada a **Tailwind CSS v4** y **responsive** (mobile-first): nav colapsable
+  en móvil, tablas con scroll horizontal, formularios/grids apilables y estados
+  de carga/error/vacío (ver §6 Usabilidad).
+
+## 11.8 Decisiones de arquitectura (ADR)
+
+- Las decisiones se registran en `docs/adr/`. **ADR-0001: Kong Gateway OSS**
+  (Apache 2.0) como API Gateway — no requiere licencia en producción.

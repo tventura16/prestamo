@@ -17,6 +17,7 @@ import (
 	"github.com/prestamos/document-service/internal/auth"
 	"github.com/prestamos/document-service/internal/config"
 	"github.com/prestamos/document-service/internal/db"
+	"github.com/prestamos/document-service/internal/docs"
 	"github.com/prestamos/document-service/internal/handler"
 	"github.com/prestamos/document-service/internal/repository"
 	"github.com/prestamos/document-service/internal/service"
@@ -124,7 +125,7 @@ func main() {
 	pagoRepo := repository.NewPagoRepository(pagosPool)
 
 	documentSvc := service.NewDocumentService(docRepo, clienteRepo, prestamoRepo, pagoRepo, cfg.DocumentStorePath)
-	docHandler := handler.NewDocumentoHandler(documentSvc, docRepo)
+	docHandler := handler.NewDocumentoHandler(documentSvc, docRepo, verifier)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -151,6 +152,8 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+
+	docs.Register(r)
 
 	api := r.Group("")
 	if verifier != nil {

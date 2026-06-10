@@ -1,11 +1,30 @@
-html, body {
+@import "tailwindcss";
+
+/* ─── Tokens de marca (Tailwind v4, CSS-first) ───
+   Exponen utilidades: bg-navy, text-navy, bg-navy-light, etc. Conservan la
+   identidad visual existente del sistema de préstamos. */
+@theme {
+  --color-navy: #1a365d;
+  --color-navy-light: #2c5282;
+  --color-ink: #2d3748;
+  --color-muted: #718096;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+html,
+body {
   height: 100%;
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-sans);
   background: #f5f7fa;
   color: #1a202c;
 }
 
-* {
-  box-sizing: border-box;
+/* Componente reutilizable: input/select/textarea con el mismo look en todos
+   los formularios (evita repetir la cadena de utilidades). */
+@layer components {
+  .ui-input {
+    @apply rounded-md border border-slate-300 px-3 py-2 text-sm text-ink outline-none transition
+           focus:border-navy-light focus:ring-2 focus:ring-navy-light/20;
+  }
 }

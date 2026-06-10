@@ -24,22 +24,25 @@ const (
 )
 
 type Pago struct {
-	ID             uuid.UUID  `json:"id"`
-	ClienteID      uuid.UUID  `json:"cliente_id"`
-	PrestamoID     uuid.UUID  `json:"prestamo_id"`
-	CuotaID        *uuid.UUID `json:"cuota_id,omitempty"`
-	FechaPago      time.Time  `json:"fecha_pago"`
-	MontoPagado    float64    `json:"monto_pagado"`
-	CapitalPagado  float64    `json:"capital_pagado"`
-	InteresPagado  float64    `json:"interes_pagado"`
-	MoraPagada     float64    `json:"mora_pagada"`
-	Tipo           TipoPago   `json:"tipo"`
-	MetodoPago     MetodoPago `json:"metodo_pago"`
-	UsuarioID      uuid.UUID  `json:"usuario_id"`
-	NumeroRecibo   *string    `json:"numero_recibo,omitempty"`
-	Observaciones  *string    `json:"observaciones,omitempty"`
-	Anulado        bool       `json:"anulado"`
-	CreatedAt      time.Time  `json:"created_at"`
+	ID              uuid.UUID  `json:"id"`
+	ClienteID       uuid.UUID  `json:"cliente_id"`
+	PrestamoID      uuid.UUID  `json:"prestamo_id"`
+	CuotaID         *uuid.UUID `json:"cuota_id,omitempty"`
+	FechaPago       time.Time  `json:"fecha_pago"`
+	MontoPagado     float64    `json:"monto_pagado"`
+	CapitalPagado   float64    `json:"capital_pagado"`
+	InteresPagado   float64    `json:"interes_pagado"`
+	MoraPagada      float64    `json:"mora_pagada"`
+	Tipo            TipoPago   `json:"tipo"`
+	MetodoPago      MetodoPago `json:"metodo_pago"`
+	UsuarioID       uuid.UUID  `json:"usuario_id"`
+	NumeroRecibo    *string    `json:"numero_recibo,omitempty"`
+	Observaciones   *string    `json:"observaciones,omitempty"`
+	Anulado         bool       `json:"anulado"`
+	AnuladoAt       *time.Time `json:"anulado_at,omitempty"`
+	AnuladoPor      *uuid.UUID `json:"anulado_por,omitempty"`
+	MotivoAnulacion *string    `json:"motivo_anulacion,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 type Movimiento struct {
@@ -61,6 +64,12 @@ type CreatePagoInput struct {
 	Observaciones *string    `json:"observaciones"`
 }
 
+// AnularPagoInput es el cuerpo de la anulación. El motivo es obligatorio para
+// dejar traza de auditoría; el operador se toma del token (no del body).
+type AnularPagoInput struct {
+	Motivo string `json:"motivo" binding:"required"`
+}
+
 type ListResult struct {
 	Items []Pago `json:"items"`
 	Total int64  `json:"total"`
@@ -78,12 +87,12 @@ type PagoResult struct {
 }
 
 type CuotaInfo struct {
-	ID               uuid.UUID `json:"id"`
-	PrestamoID       uuid.UUID `json:"prestamo_id"`
-	Numero           int       `json:"numero"`
-	SaldoPendiente   float64   `json:"saldo_pendiente"`
-	MoraAcumulada    float64   `json:"mora_acumulada"`
-	Estado           string    `json:"estado"`
+	ID             uuid.UUID `json:"id"`
+	PrestamoID     uuid.UUID `json:"prestamo_id"`
+	Numero         int       `json:"numero"`
+	SaldoPendiente float64   `json:"saldo_pendiente"`
+	MoraAcumulada  float64   `json:"mora_acumulada"`
+	Estado         string    `json:"estado"`
 }
 
 type PrestamoInfo struct {

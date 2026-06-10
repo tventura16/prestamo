@@ -9,26 +9,31 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/prestamos/loan-service/internal/auth"
 	"github.com/prestamos/loan-service/internal/models"
 	"github.com/prestamos/loan-service/internal/repository"
 )
 
 type PrestamoHandler struct {
-	repo  *repository.PrestamoRepository
-	cuota *repository.CuotaRepository
+	repo     *repository.PrestamoRepository
+	cuota    *repository.CuotaRepository
+	verifier *auth.Verifier
 }
 
-func NewPrestamoHandler(p *repository.PrestamoRepository, c *repository.CuotaRepository) *PrestamoHandler {
-	return &PrestamoHandler{repo: p, cuota: c}
+func NewPrestamoHandler(p *repository.PrestamoRepository, c *repository.CuotaRepository, verifier *auth.Verifier) *PrestamoHandler {
+	return &PrestamoHandler{repo: p, cuota: c, verifier: verifier}
 }
 
+// Register monta las rutas de préstamos con autorización por rol (alcance §4):
+// consulta abierta a cualquier rol; alta de solicitudes para cajero; la
+// aprobación y el rechazo quedan reservados a supervisor/admin.
 func (h *PrestamoHandler) Register(rg *gin.RouterGroup) {
-	rg.GET("", h.List)
-	rg.POST("", h.Create)
-	rg.GET("/:id", h.Get)
-	rg.POST("/:id/approve", h.Approve)
-	rg.POST("/:id/reject", h.Reject)
-	rg.GET("/:id/schedule", h.Schedule)
+	rg.GET("", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.List)
+	rg.POST("", h.verifier.GuardRole("admin", "cajero"), h.Create)
+	rg.GET("/:id", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.Get)
+	rg.POST("/:id/approve", h.verifier.GuardRole("admin", "supervisor"), h.Approve)
+	rg.POST("/:id/reject", h.verifier.GuardRole("admin", "supervisor"), h.Reject)
+	rg.GET("/:id/schedule", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.Schedule)
 }
 
 func (h *PrestamoHandler) Create(c *gin.Context) {
@@ -150,7 +155,8 @@ func respondRepoError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, repository.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-	case errors.Is(err, repository.ErrAlreadyDecided), errors.Is(err, repository.ErrInvalidState):
+	case errors.Is(err, repository.ErrAlreadyDecided), errors.Is(err, repository.ErrInvalidState),
+		errors.Is(err, repository.ErrClienteConMora):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

@@ -25,10 +25,10 @@ interface PrestamoForm {
   selector: 'app-prestamos',
   imports: [CommonModule, CurrencyPipe, RouterLink, FormsModule],
   template: `
-    <div class="header">
-      <h2>Préstamos</h2>
-      <div class="filters">
-        <select [(ngModel)]="estadoFilter" (change)="load()" name="estado">
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <h2 class="m-0 text-xl font-semibold text-ink">Préstamos</h2>
+      <div class="flex flex-wrap items-center gap-2">
+        <select [(ngModel)]="estadoFilter" (change)="load()" name="estado" class="ui-input">
           <option value="">Todos los estados</option>
           <option value="pendiente">Pendiente</option>
           <option value="aprobado">Aprobado</option>
@@ -37,26 +37,28 @@ interface PrestamoForm {
           <option value="finalizado">Finalizado</option>
           <option value="rechazado">Rechazado</option>
         </select>
-        <button class="btn primary" (click)="toggleForm()">
+        <button (click)="toggleForm()"
+                class="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white transition hover:bg-navy-light">
           {{ showForm() ? 'Cancelar' : '+ Nuevo préstamo' }}
         </button>
       </div>
     </div>
 
     @if (showForm()) {
-      <form class="form-card" (ngSubmit)="onSubmit()" #f="ngForm">
-        <h3>Nueva solicitud</h3>
-        <div class="row">
-          <label>Cliente *
-            <select [(ngModel)]="form.cliente_id" name="cliente_id" required>
+      <form (ngSubmit)="onSubmit()" #f="ngForm"
+            class="mb-4 flex flex-col gap-3 rounded-lg bg-white p-5 shadow-sm">
+        <h3 class="m-0 text-base font-semibold text-ink">Nueva solicitud</h3>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label class="flex flex-col gap-1 text-sm text-slate-600">Cliente *
+            <select [(ngModel)]="form.cliente_id" name="cliente_id" required class="ui-input">
               <option value="" disabled>Seleccione...</option>
               @for (c of clientes(); track c.id) {
                 <option [value]="c.id">{{ c.nombres }} {{ c.apellidos }} — CI {{ c.ci }}</option>
               }
             </select>
           </label>
-          <label>Frecuencia *
-            <select [(ngModel)]="form.frecuencia" name="frecuencia" required>
+          <label class="flex flex-col gap-1 text-sm text-slate-600">Frecuencia *
+            <select [(ngModel)]="form.frecuencia" name="frecuencia" required class="ui-input">
               <option value="diaria">Diaria</option>
               <option value="semanal">Semanal</option>
               <option value="quincenal">Quincenal</option>
@@ -64,112 +66,79 @@ interface PrestamoForm {
             </select>
           </label>
         </div>
-        <div class="row">
-          <label>Monto solicitado (BOB) *
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <label class="flex flex-col gap-1 text-sm text-slate-600">Monto solicitado (BOB) *
             <input type="number" min="1" step="0.01"
-                   [(ngModel)]="form.monto_solicitado" name="monto" required>
+                   [(ngModel)]="form.monto_solicitado" name="monto" required class="ui-input">
           </label>
-          <label>Tasa de interés (%) por periodo *
+          <label class="flex flex-col gap-1 text-sm text-slate-600">Tasa de interés (%) por periodo *
             <input type="number" min="0" step="0.01"
-                   [(ngModel)]="form.tasa_porcentaje" name="tasa" required>
+                   [(ngModel)]="form.tasa_porcentaje" name="tasa" required class="ui-input">
           </label>
-          <label>Número de cuotas *
+          <label class="flex flex-col gap-1 text-sm text-slate-600">Número de cuotas *
             <input type="number" min="1" max="600" step="1"
-                   [(ngModel)]="form.num_cuotas" name="num_cuotas" required>
+                   [(ngModel)]="form.num_cuotas" name="num_cuotas" required class="ui-input">
           </label>
         </div>
-        <label class="full">Observaciones
-          <input [(ngModel)]="form.observaciones" name="observaciones">
+        <label class="flex flex-col gap-1 text-sm text-slate-600">Observaciones
+          <input [(ngModel)]="form.observaciones" name="observaciones" class="ui-input">
         </label>
 
-        @if (submitError()) { <p class="err">{{ submitError() }}</p> }
+        @if (submitError()) {
+          <p class="rounded-md bg-red-50 p-3 text-sm text-red-600">{{ submitError() }}</p>
+        }
 
-        <div class="actions">
-          <button type="button" class="btn" (click)="toggleForm()">Cancelar</button>
-          <button type="submit" class="btn primary"
-                  [disabled]="!f.valid || submitting()">
+        <div class="flex flex-wrap justify-end gap-2">
+          <button type="button" (click)="toggleForm()"
+                  class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">Cancelar</button>
+          <button type="submit" [disabled]="!f.valid || submitting()"
+                  class="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white transition hover:bg-navy-light disabled:cursor-not-allowed disabled:opacity-50">
             {{ submitting() ? 'Guardando...' : 'Crear solicitud' }}
           </button>
         </div>
       </form>
     }
 
-    @if (loading()) { <p class="hint">Cargando...</p> }
-    @if (error()) { <p class="err">{{ error() }}</p> }
+    @if (loading()) { <p class="mb-2 text-sm text-muted">Cargando...</p> }
+    @if (error()) { <p class="mb-2 rounded-md bg-red-50 p-3 text-sm text-red-600">{{ error() }}</p> }
 
-    <div class="table-wrap">
-      <table>
+    <div class="overflow-x-auto rounded-lg bg-white shadow-sm">
+      <table class="w-full min-w-[820px] border-collapse text-sm">
         <thead>
-          <tr>
-            <th>ID</th>
-            <th>Cliente</th>
-            <th>Monto</th>
-            <th>Tasa</th>
-            <th>Cuotas</th>
-            <th>Frecuencia</th>
-            <th>Estado</th>
-            <th>Solicitud</th>
-            <th></th>
+          <tr class="border-b border-slate-200 bg-slate-50 text-left text-slate-600">
+            <th class="px-3 py-2 font-semibold">ID</th>
+            <th class="px-3 py-2 font-semibold">Cliente</th>
+            <th class="px-3 py-2 text-right font-semibold">Monto</th>
+            <th class="px-3 py-2 text-right font-semibold">Tasa</th>
+            <th class="px-3 py-2 text-center font-semibold">Cuotas</th>
+            <th class="px-3 py-2 font-semibold">Frecuencia</th>
+            <th class="px-3 py-2 font-semibold">Estado</th>
+            <th class="px-3 py-2 font-semibold">Solicitud</th>
+            <th class="px-3 py-2"></th>
           </tr>
         </thead>
         <tbody>
           @for (p of items(); track p.id) {
-            <tr>
-              <td><code>{{ p.id | slice:0:8 }}</code></td>
-              <td>{{ clienteName(p.cliente_id) }}</td>
-              <td>{{ (p.monto_aprobado ?? p.monto_solicitado) | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
-              <td>{{ (p.tasa_interes * 100).toFixed(2) }}%</td>
-              <td>{{ p.num_cuotas }}</td>
-              <td>{{ p.frecuencia }}</td>
-              <td><span class="badge" [class]="'b-' + p.estado">{{ p.estado }}</span></td>
-              <td class="muted">{{ p.fecha_solicitud | slice:0:10 }}</td>
-              <td><a [routerLink]="['/prestamos', p.id]" class="link">ver →</a></td>
+            <tr class="border-b border-slate-100 last:border-0">
+              <td class="px-3 py-2"><code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{{ p.id | slice:0:8 }}</code></td>
+              <td class="px-3 py-2">{{ clienteName(p.cliente_id) }}</td>
+              <td class="px-3 py-2 text-right">{{ (p.monto_aprobado ?? p.monto_solicitado) | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
+              <td class="px-3 py-2 text-right">{{ (p.tasa_interes * 100).toFixed(2) }}%</td>
+              <td class="px-3 py-2 text-center">{{ p.num_cuotas }}</td>
+              <td class="px-3 py-2 capitalize">{{ p.frecuencia }}</td>
+              <td class="px-3 py-2"><span class="rounded-full px-2.5 py-0.5 text-xs font-medium capitalize" [class]="badge(p.estado)">{{ p.estado }}</span></td>
+              <td class="px-3 py-2 text-muted">{{ p.fecha_solicitud | slice:0:10 }}</td>
+              <td class="px-3 py-2"><a [routerLink]="['/prestamos', p.id]" class="font-semibold text-navy-light hover:underline">ver →</a></td>
             </tr>
           } @empty {
-            <tr><td colspan="9" class="muted center">Sin préstamos</td></tr>
+            <tr><td colspan="9" class="px-3 py-6 text-center text-muted">Sin préstamos</td></tr>
           }
         </tbody>
       </table>
     </div>
 
-    <p class="hint">Mostrando {{ items().length }} de {{ total() }} préstamos</p>
+    <p class="mt-2 text-sm text-muted">Mostrando {{ items().length }} de {{ total() }} préstamos</p>
   `,
-  styles: [`
-    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-    .filters { display: flex; gap: 8px; }
-    h2 { margin: 0; color: #2d3748; }
-    h3 { margin: 0 0 12px; color: #2d3748; }
-    select, input { padding: 8px 12px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; }
-    select:focus, input:focus { outline: none; border-color: #2c5282; }
-    .form-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 16px; display: flex; flex-direction: column; gap: 12px; }
-    .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
-    .row label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #4a5568; }
-    label.full { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #4a5568; }
-    .actions { display: flex; gap: 8px; justify-content: flex-end; }
-    .btn { padding: 8px 16px; border: 1px solid #cbd5e0; background: white; border-radius: 6px; cursor: pointer; font-size: 14px; }
-    .btn.primary { background: #1a365d; color: white; border-color: #1a365d; }
-    .btn.primary:disabled { background: #a0aec0; border-color: #a0aec0; cursor: not-allowed; }
-    .table-wrap { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow: hidden; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 10px 14px; text-align: left; font-size: 14px; }
-    th { background: #f7fafc; color: #4a5568; font-weight: 600; border-bottom: 1px solid #e2e8f0; }
-    td { border-bottom: 1px solid #edf2f7; }
-    tr:last-child td { border-bottom: none; }
-    code { background: #edf2f7; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
-    .badge { padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; }
-    .b-pendiente { background: #feebc8; color: #7b341e; }
-    .b-aprobado { background: #bee3f8; color: #2a4365; }
-    .b-activo { background: #c6f6d5; color: #22543d; }
-    .b-finalizado { background: #e2e8f0; color: #4a5568; }
-    .b-mora { background: #fed7d7; color: #742a2a; }
-    .b-rechazado { background: #fed7d7; color: #742a2a; }
-    .muted { color: #718096; }
-    .center { text-align: center; }
-    .hint { color: #718096; font-size: 13px; margin-top: 8px; }
-    .err { color: #c53030; background: #fff5f5; padding: 10px; border-radius: 6px; }
-    .link { color: #2c5282; text-decoration: none; font-weight: 500; }
-    .link:hover { text-decoration: underline; }
-  `],
 })
 export class Prestamos implements OnInit {
   private svc = inject(LoanService);
@@ -186,6 +155,24 @@ export class Prestamos implements OnInit {
   submitting = signal(false);
   submitError = signal<string | null>(null);
   form: PrestamoForm = this.emptyForm();
+
+  // Color de badge por estado de préstamo.
+  badge(estado: string): string {
+    switch (estado) {
+      case 'activo':
+        return 'bg-green-100 text-green-800';
+      case 'mora':
+      case 'rechazado':
+        return 'bg-red-100 text-red-800';
+      case 'finalizado':
+        return 'bg-slate-200 text-slate-700';
+      case 'pendiente':
+      case 'aprobado':
+        return 'bg-orange-100 text-orange-800';
+      default:
+        return 'bg-slate-200 text-slate-600';
+    }
+  }
 
   ngOnInit() {
     this.load();

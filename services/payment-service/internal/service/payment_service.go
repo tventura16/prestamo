@@ -250,6 +250,101 @@ func (s *PaymentService) Register(ctx context.Context, in models.CreatePagoInput
 	return result, false, nil
 }
 
+// AnularResult es lo que devuelve la anulación: el pago anulado y el estado
+// al que converge la cuota/préstamo tras la reversión.
+type AnularResult struct {
+	Pago     models.Pago         `json:"pago"`
+	Cuota    models.CuotaInfo    `json:"cuota"`
+	Prestamo models.PrestamoInfo `json:"prestamo"`
+}
+
+// Anular revierte un pago de forma compensatoria y recuperable, simétrica a
+// Register.
+//
+// Garantías:
+//   - Auditoría inmutable: el pago no se borra; se marca anulado con quién y
+//     por qué, y queda el evento pago.anulado.
+//   - Consistencia entre DBs: la marca de anulación + el evento de outbox
+//     commitean atomicamente en la DB pagos ANTES de revertir la cuota en la
+//     DB prestamos. Si el commit de prestamos falla, el consumer del outbox
+//     aplica la reversión de forma idempotente (guard reverted_at).
+func (s *PaymentService) Anular(ctx context.Context, pagoID uuid.UUID, anuladoPor *uuid.UUID, motivo string) (AnularResult, error) {
+	// 1. Validar el pago a anular.
+	pago, _, err := s.pagoRepo.GetByID(ctx, pagoID)
+	if err != nil {
+		return AnularResult{}, err
+	}
+	if pago.Anulado {
+		return AnularResult{}, repository.ErrPagoYaAnulado
+	}
+	if pago.CuotaID == nil {
+		return AnularResult{}, fmt.Errorf("pago sin cuota asociada: %s", pagoID)
+	}
+
+	// 2. TX-prestamos: revertir la aplicación a la cuota (idempotente). Los
+	//    montos efectivamente devueltos alimentan el evento de outbox.
+	ltx, err := s.loanRepo.Pool().Begin(ctx)
+	if err != nil {
+		return AnularResult{}, fmt.Errorf("begin prestamos tx: %w", err)
+	}
+	defer ltx.Rollback(ctx)
+
+	applyRes, amounts, err := s.loanRepo.ReversePagoFromCuota(ctx, ltx, pagoID)
+	if err != nil {
+		return AnularResult{}, err
+	}
+
+	// 3. TX-pagos: marcar anulado + outbox pago.anulado (atómico).
+	ptx, err := s.pagoRepo.Pool().Begin(ctx)
+	if err != nil {
+		return AnularResult{}, fmt.Errorf("begin pagos tx: %w", err)
+	}
+	defer ptx.Rollback(ctx)
+
+	pagoAnulado, err := s.pagoRepo.MarkAnuladoTx(ctx, ptx, pagoID, anuladoPor, motivo)
+	if err != nil {
+		return AnularResult{}, err
+	}
+
+	evt := events.PagoAnulado{
+		PagoID:     pagoID,
+		CuotaID:    *pago.CuotaID,
+		PrestamoID: pago.PrestamoID,
+		ClienteID:  pago.ClienteID,
+		Capital:    amounts.Capital,
+		Interes:    amounts.Interes,
+		Mora:       amounts.Mora,
+		Motivo:     motivo,
+		OcurridoEn: time.Now(),
+	}
+	payload, err := evt.Marshal()
+	if err != nil {
+		return AnularResult{}, fmt.Errorf("marshal event: %w", err)
+	}
+	if err := repository.InsertOutboxTx(ctx, ptx, repository.OutboxEvent{
+		AggregateType: events.AggregatePago,
+		AggregateID:   pagoID,
+		EventType:     events.TypePagoAnulado,
+		Payload:       payload,
+	}); err != nil {
+		return AnularResult{}, err
+	}
+
+	// 4. Commit pagos PRIMERO: la anulación y el evento quedan durables.
+	if err := ptx.Commit(ctx); err != nil {
+		return AnularResult{}, fmt.Errorf("commit pagos tx: %w", err)
+	}
+
+	// 5. Commit prestamos. Si falla AQUÍ, la anulación ya está registrada y el
+	//    evento de outbox sin publicar → el consumer revertirá la cuota.
+	if err := ltx.Commit(ctx); err != nil {
+		s.logger.Error("commit prestamos falló tras anular pago; el outbox reconciliará la reversión",
+			"pago_id", pagoID, "cuota_id", *pago.CuotaID, "err", err)
+	}
+
+	return AnularResult{Pago: pagoAnulado, Cuota: applyRes.Cuota, Prestamo: applyRes.Prestamo}, nil
+}
+
 func round2(x float64) float64 {
 	return math.Round(x*100) / 100
 }

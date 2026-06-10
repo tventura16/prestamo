@@ -45,6 +45,42 @@ export interface ReporteMensual {
   pagos_recibidos: number;
 }
 
+export interface PrestamoResumen {
+  id: string;
+  monto_aprobado?: number;
+  estado: string;
+  num_cuotas: number;
+  cuotas_pagadas: number;
+  cuotas_vencidas: number;
+  saldo_pendiente: number;
+  total_pagado: number;
+  fecha_solicitud: string;
+}
+
+export interface ClienteInfoReporte {
+  nombres: string;
+  apellidos: string;
+  ci: string;
+  telefono?: string;
+  email?: string;
+  estado: string;
+}
+
+export interface ReporteCliente {
+  cliente_id: string;
+  cliente?: ClienteInfoReporte;
+  num_prestamos: number;
+  prestamos_activos: number;
+  total_prestado: number;
+  total_pagado: number;
+  saldo_total: number;
+  mora_total: number;
+  cuotas_vencidas: number;
+  elegible_nuevo_prestamo: boolean;
+  motivo_inelegible?: string;
+  prestamos: PrestamoResumen[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class ReportService {
   private http = inject(HttpClient);
@@ -69,4 +105,23 @@ export class ReportService {
       params: { year: String(year), month: String(month) },
     });
   }
+
+  /** Perfil crediticio consolidado del cliente (resumen + elegibilidad). */
+  clientReport(id: string): Observable<ReporteCliente> {
+    return this.http.get<ReporteCliente>(`${this.base}/clients/${id}`);
+  }
+
+  /**
+   * Descarga un reporte en el formato dado como blob. Pasa por el interceptor
+   * que agrega el Bearer token (el gateway lo exige). El nombre de archivo lo
+   * arma el llamador para no depender de Content-Disposition vía CORS.
+   */
+  export(path: 'daily' | 'monthly' | 'overdue' | 'dashboard', format: ExportFormat, params: Record<string, string> = {}): Observable<Blob> {
+    return this.http.get(`${this.base}/${path}`, {
+      params: { ...params, format },
+      responseType: 'blob',
+    });
+  }
 }
+
+export type ExportFormat = 'csv' | 'xlsx' | 'pdf';

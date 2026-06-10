@@ -17,7 +17,9 @@ import (
 	"github.com/prestamos/loan-service/internal/auth"
 	"github.com/prestamos/loan-service/internal/config"
 	"github.com/prestamos/loan-service/internal/db"
+	"github.com/prestamos/loan-service/internal/docs"
 	"github.com/prestamos/loan-service/internal/handler"
+	"github.com/prestamos/loan-service/internal/mora"
 	"github.com/prestamos/loan-service/internal/repository"
 )
 
@@ -28,6 +30,11 @@ func main() {
 		Level: parseLogLevel(cfg.LogLevel),
 	}))
 	slog.SetDefault(logger)
+
+	if err := os.MkdirAll(cfg.GarantiasStorePath, 0o755); err != nil {
+		logger.Error("cannot create garantias store", "path", cfg.GarantiasStorePath, "err", err)
+		os.Exit(1)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -87,7 +94,9 @@ func main() {
 
 	prestamoRepo := repository.NewPrestamoRepository(pool)
 	cuotaRepo := repository.NewCuotaRepository(pool)
-	prestamoHandler := handler.NewPrestamoHandler(prestamoRepo, cuotaRepo)
+	garantiaRepo := repository.NewGarantiaRepository(pool)
+	prestamoHandler := handler.NewPrestamoHandler(prestamoRepo, cuotaRepo, verifier)
+	garantiaHandler := handler.NewGarantiaHandler(garantiaRepo, cfg.GarantiasStorePath, verifier)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -107,12 +116,23 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	docs.Register(r) // /docs (Swagger UI) y /openapi.yaml, públicos
 
 	api := r.Group("")
 	if verifier != nil {
 		api.Use(verifier.Middleware())
 	}
 	prestamoHandler.Register(api.Group("/loans"))
+	garantiaHandler.Register(api.Group("/loans"))
+
+	// Job de mora: devenga interés moratorio y transiciona estados por
+	// vencimiento. Comparte el ctx del proceso para detenerse en el shutdown.
+	if cfg.MoraJobEnabled {
+		go mora.NewRunner(pool, logger).Schedule(ctx, cfg.MoraJobInterval)
+		logger.Info("scheduler de mora habilitado", "interval", cfg.MoraJobInterval.String())
+	} else {
+		logger.Warn("scheduler de mora deshabilitado")
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.ServicePort,

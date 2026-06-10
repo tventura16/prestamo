@@ -64,10 +64,10 @@ type CreatePrestamoInput struct {
 
 // ApprovePrestamoInput aprueba y desembolsa; genera el plan de pagos.
 type ApprovePrestamoInput struct {
-	MontoAprobado   *float64   `json:"monto_aprobado"   binding:"omitempty,gt=0"`
-	FechaDesembolso *string    `json:"fecha_desembolso" binding:"omitempty,datetime=2006-01-02"`
-	AprobadoPor     uuid.UUID  `json:"aprobado_por"     binding:"required"`
-	Observaciones   *string    `json:"observaciones"`
+	MontoAprobado   *float64  `json:"monto_aprobado"   binding:"omitempty,gt=0"`
+	FechaDesembolso *string   `json:"fecha_desembolso" binding:"omitempty,datetime=2006-01-02"`
+	AprobadoPor     uuid.UUID `json:"aprobado_por"     binding:"required"`
+	Observaciones   *string   `json:"observaciones"`
 }
 
 type RejectPrestamoInput struct {

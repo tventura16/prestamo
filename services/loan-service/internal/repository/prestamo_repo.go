@@ -18,6 +18,7 @@ var (
 	ErrNotFound       = errors.New("préstamo no encontrado")
 	ErrInvalidState   = errors.New("transición de estado inválida")
 	ErrAlreadyDecided = errors.New("el préstamo ya fue aprobado o rechazado")
+	ErrClienteConMora = errors.New("el cliente tiene mora activa; no puede aprobarse un nuevo préstamo")
 )
 
 type PrestamoRepository struct {
@@ -154,6 +155,22 @@ func (r *PrestamoRepository) Approve(ctx context.Context, id uuid.UUID, in model
 		return models.Prestamo{}, nil, ErrAlreadyDecided
 	}
 
+	// Regla de negocio §7: no se aprueba un préstamo si el cliente tiene mora
+	// activa, salvo que el parámetro aprobar_si_mora_activa lo permita.
+	aprobarSiMora, err := leerAprobarSiMora(ctx, tx)
+	if err != nil {
+		return models.Prestamo{}, nil, err
+	}
+	if !aprobarSiMora {
+		conMora, err := clienteTieneMoraActiva(ctx, tx, p.ClienteID)
+		if err != nil {
+			return models.Prestamo{}, nil, err
+		}
+		if conMora {
+			return models.Prestamo{}, nil, ErrClienteConMora
+		}
+	}
+
 	monto := p.MontoSolicitado
 	if in.MontoAprobado != nil {
 		monto = *in.MontoAprobado
@@ -218,6 +235,41 @@ func (r *PrestamoRepository) Approve(ctx context.Context, id uuid.UUID, in model
 		return models.Prestamo{}, nil, fmt.Errorf("commit: %w", err)
 	}
 	return pUpdated, cuotas, nil
+}
+
+// clienteTieneMoraActiva indica si el cliente tiene alguna cuota vencida con
+// saldo o mora en sus préstamos activos/en mora. Se evalúa dentro de la misma
+// transacción que la aprobación para ver un estado consistente.
+func clienteTieneMoraActiva(ctx context.Context, tx pgx.Tx, clienteID uuid.UUID) (bool, error) {
+	var exists bool
+	err := tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM cuotas c
+			JOIN prestamos p ON p.id = c.prestamo_id
+			WHERE p.cliente_id = $1
+			  AND p.estado IN ('activo', 'mora')
+			  AND c.estado = 'vencida'
+			  AND (c.saldo_pendiente > 0 OR c.mora_acumulada > 0)
+		)`, clienteID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("verificar mora del cliente: %w", err)
+	}
+	return exists, nil
+}
+
+// leerAprobarSiMora lee el parámetro de sistema; default false (no aprobar con
+// mora) si la fila no existe.
+func leerAprobarSiMora(ctx context.Context, tx pgx.Tx) (bool, error) {
+	var valor string
+	err := tx.QueryRow(ctx,
+		`SELECT valor FROM parametros_sistema WHERE clave = 'aprobar_si_mora_activa'`).Scan(&valor)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("leer parámetro de mora: %w", err)
+	}
+	return valor == "true", nil
 }
 
 func (r *PrestamoRepository) Reject(ctx context.Context, id uuid.UUID, in models.RejectPrestamoInput) (models.Prestamo, error) {

@@ -3,7 +3,7 @@ import { CommonModule, CurrencyPipe } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 
-import { LoanService, Prestamo, Cuota } from '../../core/services/loan.service';
+import { LoanService, Prestamo, Cuota, Garantia, SubtipoGarantia } from '../../core/services/loan.service';
 import { PaymentService, MetodoPago } from '../../core/services/payment.service';
 import { DocumentService } from '../../core/services/document.service';
 import { KeycloakService } from '../../core/keycloak.service';
@@ -12,20 +12,20 @@ import { KeycloakService } from '../../core/keycloak.service';
   selector: 'app-prestamo-detail',
   imports: [CommonModule, CurrencyPipe, RouterLink, FormsModule],
   template: `
-    <a routerLink="/prestamos" class="back">← volver</a>
+    <a routerLink="/prestamos" class="text-sm text-navy-light hover:underline">← volver</a>
 
-    @if (loading()) { <p class="hint">Cargando...</p> }
-    @if (error()) { <p class="err">{{ error() }}</p> }
+    @if (loading()) { <p class="mt-3 text-sm text-muted">Cargando...</p> }
+    @if (error()) { <p class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-600">{{ error() }}</p> }
 
     @if (prestamo(); as p) {
-      <div class="card-info">
-        <div class="title">
-          <h2>Préstamo</h2>
-          <span class="badge" [class]="'b-' + p.estado">{{ p.estado }}</span>
+      <div class="mb-5 mt-3 rounded-lg bg-white p-5 shadow-sm">
+        <div class="mb-3 flex items-center gap-3">
+          <h2 class="m-0 text-xl font-semibold text-ink">Préstamo</h2>
+          <span class="rounded-full px-2.5 py-0.5 text-xs font-medium capitalize" [class]="badge(p.estado)">{{ p.estado }}</span>
         </div>
-        <div class="grid">
-          <div><b>ID:</b> <code>{{ p.id }}</code></div>
-          <div><b>Cliente:</b> <code>{{ p.cliente_id }}</code></div>
+        <div class="mb-3 grid grid-cols-1 gap-x-6 gap-y-2 text-sm text-ink sm:grid-cols-2">
+          <div><b>ID:</b> <code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{{ p.id }}</code></div>
+          <div><b>Cliente:</b> <code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{{ p.cliente_id }}</code></div>
           <div><b>Monto solicitado:</b> {{ p.monto_solicitado | currency:'BOB':'symbol-narrow':'1.2-2' }}</div>
           <div><b>Monto aprobado:</b> {{ (p.monto_aprobado ?? 0) | currency:'BOB':'symbol-narrow':'1.2-2' }}</div>
           <div><b>Tasa:</b> {{ (p.tasa_interes * 100).toFixed(2) }}% ({{ p.tipo_interes }})</div>
@@ -34,37 +34,42 @@ import { KeycloakService } from '../../core/keycloak.service';
           <div><b>Desembolso:</b> {{ (p.fecha_desembolso | slice:0:10) || '—' }}</div>
         </div>
         @if (p.observaciones) {
-          <p><b>Observaciones:</b> {{ p.observaciones }}</p>
+          <p class="text-sm text-ink"><b>Observaciones:</b> {{ p.observaciones }}</p>
         }
 
         <!-- Acciones disponibles según estado -->
-        <div class="actions">
+        <div class="flex flex-wrap gap-2">
           @if (p.estado === 'pendiente') {
-            <button class="btn success" (click)="openApprove()">✓ Aprobar</button>
-            <button class="btn danger" (click)="openReject()">✗ Rechazar</button>
+            <button (click)="openApprove()"
+                    class="rounded-md bg-green-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-green-800">✓ Aprobar</button>
+            <button (click)="openReject()"
+                    class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700">✗ Rechazar</button>
           }
-          <button class="btn primary" (click)="generarContrato()" [disabled]="generando()">
+          <button (click)="generarContrato()" [disabled]="generando()"
+                  class="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white transition hover:bg-navy-light disabled:cursor-not-allowed disabled:opacity-50">
             {{ generando() ? 'Generando...' : '📄 Contrato PDF' }}
           </button>
         </div>
 
         <!-- Form Aprobar -->
         @if (showApprove()) {
-          <div class="inline-form">
-            <h4>Aprobar préstamo</h4>
-            <div class="row">
-              <label>Monto aprobado (default = solicitado)
+          <div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <h4 class="mb-3 text-sm font-semibold text-ink">Aprobar préstamo</h4>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label class="flex flex-col gap-1 text-sm text-slate-600">Monto aprobado (default = solicitado)
                 <input type="number" min="1" step="0.01"
-                       [(ngModel)]="approveForm.monto_aprobado" name="monto_a">
+                       [(ngModel)]="approveForm.monto_aprobado" name="monto_a" class="ui-input">
               </label>
-              <label>Fecha desembolso
-                <input type="date" [(ngModel)]="approveForm.fecha_desembolso" name="fecha_d">
+              <label class="flex flex-col gap-1 text-sm text-slate-600">Fecha desembolso
+                <input type="date" [(ngModel)]="approveForm.fecha_desembolso" name="fecha_d" class="ui-input">
               </label>
             </div>
-            @if (approveError()) { <p class="err">{{ approveError() }}</p> }
-            <div class="actions">
-              <button class="btn" (click)="showApprove.set(false)">Cancelar</button>
-              <button class="btn success" (click)="doApprove()" [disabled]="approving()">
+            @if (approveError()) { <p class="mt-2 rounded-md bg-red-50 p-3 text-sm text-red-600">{{ approveError() }}</p> }
+            <div class="mt-3 flex flex-wrap justify-end gap-2">
+              <button (click)="showApprove.set(false)"
+                      class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">Cancelar</button>
+              <button (click)="doApprove()" [disabled]="approving()"
+                      class="rounded-md bg-green-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-green-800 disabled:cursor-not-allowed disabled:opacity-50">
                 {{ approving() ? 'Aprobando...' : 'Confirmar aprobación' }}
               </button>
             </div>
@@ -73,16 +78,17 @@ import { KeycloakService } from '../../core/keycloak.service';
 
         <!-- Form Rechazar -->
         @if (showReject()) {
-          <div class="inline-form">
-            <h4>Rechazar préstamo</h4>
-            <label>Motivo *
-              <input [(ngModel)]="rejectForm.observaciones" name="obs" required minlength="3">
+          <div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <h4 class="mb-3 text-sm font-semibold text-ink">Rechazar préstamo</h4>
+            <label class="flex flex-col gap-1 text-sm text-slate-600">Motivo *
+              <input [(ngModel)]="rejectForm.observaciones" name="obs" required minlength="3" class="ui-input">
             </label>
-            @if (rejectError()) { <p class="err">{{ rejectError() }}</p> }
-            <div class="actions">
-              <button class="btn" (click)="showReject.set(false)">Cancelar</button>
-              <button class="btn danger" (click)="doReject()"
-                      [disabled]="rejecting() || !rejectForm.observaciones">
+            @if (rejectError()) { <p class="mt-2 rounded-md bg-red-50 p-3 text-sm text-red-600">{{ rejectError() }}</p> }
+            <div class="mt-3 flex flex-wrap justify-end gap-2">
+              <button (click)="showReject.set(false)"
+                      class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">Cancelar</button>
+              <button (click)="doReject()" [disabled]="rejecting() || !rejectForm.observaciones"
+                      class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">
                 {{ rejecting() ? 'Rechazando...' : 'Confirmar rechazo' }}
               </button>
             </div>
@@ -90,65 +96,175 @@ import { KeycloakService } from '../../core/keycloak.service';
         }
       </div>
 
-      <h3>Plan de pagos</h3>
-      <div class="table-wrap">
-        <table>
+      <!-- Garantías (entidades con datos por subtipo + imágenes) -->
+      <div class="mb-5 rounded-lg bg-white p-5 shadow-sm">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 class="m-0 text-base font-semibold text-ink">Garantías <span class="text-sm font-normal text-muted">({{ garantias().length }})</span></h3>
+          @if (puedeEditar()) {
+            <button (click)="toggleNuevaGarantia()"
+                    class="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50">
+              {{ mostrarNueva() ? 'Cancelar' : '+ Garantía' }}
+            </button>
+          }
+        </div>
+
+        <!-- Form nueva garantía -->
+        @if (mostrarNueva()) {
+          <div class="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label class="flex flex-col gap-1 text-sm text-slate-600">Tipo de garantía *
+                <select [(ngModel)]="nuevoSubtipo" (change)="onSubtipoChange()" name="subtipo" class="ui-input">
+                  <option value="vehiculo">Vehículo</option>
+                  <option value="inmueble">Inmueble (hipotecaria)</option>
+                  <option value="garante">Garante (fianza)</option>
+                  <option value="mueble">Bien mueble / mercadería</option>
+                </select>
+              </label>
+              <label class="flex flex-col gap-1 text-sm text-slate-600">Valor estimado (BOB)
+                <input type="number" min="0" step="0.01" [(ngModel)]="nuevoValor" name="valor" class="ui-input">
+              </label>
+            </div>
+            <!-- Campos dinámicos según subtipo -->
+            <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              @for (campo of camposActuales(); track campo.key) {
+                <label class="flex flex-col gap-1 text-sm text-slate-600">{{ campo.label }}{{ campo.required ? ' *' : '' }}
+                  <input [type]="campo.type || 'text'" [(ngModel)]="nuevoDatos[campo.key]" [name]="'d_' + campo.key" class="ui-input">
+                </label>
+              }
+            </div>
+            <label class="mt-3 flex flex-col gap-1 text-sm text-slate-600">Descripción / observación
+              <input [(ngModel)]="nuevoDescripcion" name="g_desc" class="ui-input">
+            </label>
+            @if (nuevaError()) { <p class="mt-2 rounded-md bg-red-50 p-3 text-sm text-red-600">{{ nuevaError() }}</p> }
+            <div class="mt-3 flex flex-wrap justify-end gap-2">
+              <button (click)="toggleNuevaGarantia()" class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">Cancelar</button>
+              <button (click)="crearGarantia()" [disabled]="guardandoGarantia()"
+                      class="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white hover:bg-navy-light disabled:opacity-50">
+                {{ guardandoGarantia() ? 'Guardando...' : 'Agregar garantía' }}
+              </button>
+            </div>
+          </div>
+        }
+
+        @if (garantias().length === 0 && !mostrarNueva()) {
+          <p class="text-sm text-muted">Sin garantías registradas.</p>
+        }
+
+        <!-- Lista de garantías -->
+        <div class="flex flex-col gap-4">
+          @for (g of garantias(); track g.id) {
+            <div class="rounded-lg border border-slate-200 p-4">
+              <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                  <span class="rounded-full bg-navy px-2.5 py-0.5 text-xs font-medium capitalize text-white">{{ subtipoLabel(g.subtipo) }}</span>
+                  @if (g.valor_estimado) {
+                    <span class="text-sm text-muted">{{ g.valor_estimado | currency:g.moneda:'symbol-narrow':'1.2-2' }}</span>
+                  }
+                </div>
+                <div class="flex items-center gap-2">
+                  @if (puedeEditar()) {
+                    <label class="cursor-pointer text-xs text-navy-light hover:underline">
+                      + imagen
+                      <input type="file" accept="image/png,image/jpeg,image/webp" class="hidden" (change)="onFileGarantia($event, g.id)">
+                    </label>
+                    <button (click)="eliminarGarantia(g.id)" class="text-xs text-red-600 hover:underline">eliminar</button>
+                  }
+                </div>
+              </div>
+              <!-- Datos del subtipo -->
+              <div class="mb-2 grid grid-cols-1 gap-x-6 gap-y-1 text-sm text-ink sm:grid-cols-2">
+                @for (campo of camposDe(g.subtipo); track campo.key) {
+                  @if (g.datos[campo.key]) {
+                    <div><b>{{ campo.label }}:</b> {{ g.datos[campo.key] }}</div>
+                  }
+                }
+              </div>
+              @if (g.descripcion) { <p class="mb-2 text-sm text-muted">{{ g.descripcion }}</p> }
+              @if (subiendoEn() === g.id) { <p class="mb-2 text-xs text-muted">Subiendo imagen...</p> }
+              <!-- Galería de imágenes de esta garantía -->
+              @if (g.imagenes && g.imagenes.length > 0) {
+                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                  @for (img of g.imagenes; track img.id) {
+                    <figure class="m-0 overflow-hidden rounded-lg border border-slate-200">
+                      <a [href]="thumbs()[img.id]" target="_blank" rel="noopener">
+                        <img [src]="thumbs()[img.id]" [alt]="img.nombre_archivo" class="h-28 w-full bg-slate-100 object-cover"/>
+                      </a>
+                      <figcaption class="flex items-center justify-between gap-1 px-2 py-1 text-xs text-muted">
+                        <span class="truncate" [title]="img.nombre_archivo">{{ img.nombre_archivo }}</span>
+                        @if (puedeEditar()) {
+                          <button (click)="eliminarImagen(g.id, img.id)" class="shrink-0 text-red-600 hover:underline">✕</button>
+                        }
+                      </figcaption>
+                    </figure>
+                  }
+                </div>
+              } @else {
+                <p class="text-xs text-muted">Sin imágenes.</p>
+              }
+            </div>
+          }
+        </div>
+      </div>
+
+      <h3 class="mb-3 text-base font-semibold text-ink">Plan de pagos</h3>
+      <div class="overflow-x-auto rounded-lg bg-white shadow-sm">
+        <table class="w-full min-w-[820px] border-collapse text-sm">
           <thead>
-            <tr>
-              <th>#</th>
-              <th>Vencimiento</th>
-              <th class="r">Capital</th>
-              <th class="r">Interés</th>
-              <th class="r">Total</th>
-              <th class="r">Saldo</th>
-              <th>Estado</th>
-              <th>Pago</th>
-              <th></th>
+            <tr class="border-b border-slate-200 bg-slate-50 text-left text-slate-600">
+              <th class="px-3 py-2 text-center font-semibold">#</th>
+              <th class="px-3 py-2 font-semibold">Vencimiento</th>
+              <th class="px-3 py-2 text-right font-semibold">Capital</th>
+              <th class="px-3 py-2 text-right font-semibold">Interés</th>
+              <th class="px-3 py-2 text-right font-semibold">Total</th>
+              <th class="px-3 py-2 text-right font-semibold">Saldo</th>
+              <th class="px-3 py-2 font-semibold">Estado</th>
+              <th class="px-3 py-2 font-semibold">Pago</th>
+              <th class="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             @for (c of cuotas(); track c.id) {
-              <tr [class.pagada]="c.estado === 'pagada'">
-                <td>{{ c.numero }}</td>
-                <td>{{ c.fecha_vencimiento | slice:0:10 }}</td>
-                <td class="r">{{ c.capital | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
-                <td class="r">{{ c.interes | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
-                <td class="r"><b>{{ c.total | currency:'BOB':'symbol-narrow':'1.2-2' }}</b></td>
-                <td class="r">{{ c.saldo_pendiente | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
-                <td><span class="badge" [class]="'c-' + c.estado">{{ c.estado }}</span></td>
-                <td class="muted">{{ (c.fecha_pago | slice:0:10) || '—' }}</td>
-                <td>
+              <tr class="border-b border-slate-100 last:border-0" [class.opacity-55]="c.estado === 'pagada'">
+                <td class="px-3 py-2 text-center">{{ c.numero }}</td>
+                <td class="px-3 py-2">{{ c.fecha_vencimiento | slice:0:10 }}</td>
+                <td class="px-3 py-2 text-right">{{ c.capital | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
+                <td class="px-3 py-2 text-right">{{ c.interes | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
+                <td class="px-3 py-2 text-right font-semibold">{{ c.total | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
+                <td class="px-3 py-2 text-right">{{ c.saldo_pendiente | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
+                <td class="px-3 py-2"><span class="rounded-full px-2.5 py-0.5 text-xs font-medium capitalize" [class]="badge(c.estado)">{{ c.estado }}</span></td>
+                <td class="px-3 py-2 text-muted">{{ (c.fecha_pago | slice:0:10) || '—' }}</td>
+                <td class="px-3 py-2">
                   @if (c.estado !== 'pagada' && p.estado === 'activo') {
-                    <button class="link-btn" (click)="openPay(c)">💰 Pagar</button>
+                    <button (click)="openPay(c)" class="font-semibold text-navy-light hover:underline">💰 Pagar</button>
                   }
                 </td>
               </tr>
             } @empty {
-              <tr><td colspan="9" class="muted center">Sin cuotas (préstamo aún no aprobado)</td></tr>
+              <tr><td colspan="9" class="px-3 py-6 text-center text-muted">Sin cuotas (préstamo aún no aprobado)</td></tr>
             }
           </tbody>
         </table>
       </div>
 
       @if (cuotas().length > 0) {
-        <div class="totals">
-          <span>Capital: <b>{{ totalCapital() | currency:'BOB':'symbol-narrow':'1.2-2' }}</b></span>
-          <span>Interés: <b>{{ totalInteres() | currency:'BOB':'symbol-narrow':'1.2-2' }}</b></span>
-          <span>Total: <b>{{ totalGeneral() | currency:'BOB':'symbol-narrow':'1.2-2' }}</b></span>
+        <div class="mt-3 flex flex-wrap justify-end gap-6 text-sm text-slate-600">
+          <span>Capital: <b class="text-ink">{{ totalCapital() | currency:'BOB':'symbol-narrow':'1.2-2' }}</b></span>
+          <span>Interés: <b class="text-ink">{{ totalInteres() | currency:'BOB':'symbol-narrow':'1.2-2' }}</b></span>
+          <span>Total: <b class="text-ink">{{ totalGeneral() | currency:'BOB':'symbol-narrow':'1.2-2' }}</b></span>
         </div>
       }
 
       <!-- Form Pagar Cuota -->
       @if (payCuota(); as pc) {
-        <div class="inline-form sticky">
-          <h4>Registrar pago — Cuota #{{ pc.numero }}</h4>
-          <div class="row">
-            <label>Monto a pagar *
+        <div class="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <h4 class="mb-3 text-sm font-semibold text-ink">Registrar pago — Cuota #{{ pc.numero }}</h4>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label class="flex flex-col gap-1 text-sm text-slate-600">Monto a pagar *
               <input type="number" min="0.01" step="0.01" max="{{ pc.saldo_pendiente + pc.mora_acumulada }}"
-                     [(ngModel)]="payForm.monto_pagado" name="monto_p" required>
+                     [(ngModel)]="payForm.monto_pagado" name="monto_p" required class="ui-input">
             </label>
-            <label>Método de pago *
-              <select [(ngModel)]="payForm.metodo_pago" name="metodo_p" required>
+            <label class="flex flex-col gap-1 text-sm text-slate-600">Método de pago *
+              <select [(ngModel)]="payForm.metodo_pago" name="metodo_p" required class="ui-input">
                 <option value="efectivo">Efectivo</option>
                 <option value="transferencia">Transferencia</option>
                 <option value="cheque">Cheque</option>
@@ -157,19 +273,21 @@ import { KeycloakService } from '../../core/keycloak.service';
               </select>
             </label>
           </div>
-          <label class="full">Observaciones
-            <input [(ngModel)]="payForm.observaciones" name="obs_p">
+          <label class="mt-3 flex flex-col gap-1 text-sm text-slate-600">Observaciones
+            <input [(ngModel)]="payForm.observaciones" name="obs_p" class="ui-input">
           </label>
-          <p class="hint">
-            Saldo cuota: <b>{{ pc.saldo_pendiente | currency:'BOB':'symbol-narrow':'1.2-2' }}</b>
+          <p class="mt-2 text-sm text-muted">
+            Saldo cuota: <b class="text-ink">{{ pc.saldo_pendiente | currency:'BOB':'symbol-narrow':'1.2-2' }}</b>
             @if (pc.mora_acumulada > 0) {
-              · Mora: <b>{{ pc.mora_acumulada | currency:'BOB':'symbol-narrow':'1.2-2' }}</b>
+              · Mora: <b class="text-red-600">{{ pc.mora_acumulada | currency:'BOB':'symbol-narrow':'1.2-2' }}</b>
             }
           </p>
-          @if (payError()) { <p class="err">{{ payError() }}</p> }
-          <div class="actions">
-            <button class="btn" (click)="payCuota.set(null)">Cancelar</button>
-            <button class="btn primary" (click)="doPay()" [disabled]="paying()">
+          @if (payError()) { <p class="mt-2 rounded-md bg-red-50 p-3 text-sm text-red-600">{{ payError() }}</p> }
+          <div class="mt-3 flex flex-wrap justify-end gap-2">
+            <button (click)="payCuota.set(null)"
+                    class="rounded-md border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50">Cancelar</button>
+            <button (click)="doPay()" [disabled]="paying()"
+                    class="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white transition hover:bg-navy-light disabled:cursor-not-allowed disabled:opacity-50">
               {{ paying() ? 'Procesando...' : 'Confirmar pago' }}
             </button>
           </div>
@@ -177,59 +295,12 @@ import { KeycloakService } from '../../core/keycloak.service';
       }
 
       @if (pdfUrl()) {
-        <div class="ok">
-          ✓ <a [href]="pdfUrl()!" target="_blank" rel="noopener">Abrir PDF generado</a>
+        <div class="mt-3 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+          ✓ <a [href]="pdfUrl()!" target="_blank" rel="noopener" class="font-semibold hover:underline">Abrir PDF generado</a>
         </div>
       }
     }
   `,
-  styles: [`
-    .back { color: #2c5282; text-decoration: none; font-size: 14px; }
-    .back:hover { text-decoration: underline; }
-    .card-info { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin: 12px 0 20px; }
-    .title { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-    h2 { margin: 0; color: #2d3748; }
-    h3 { color: #2d3748; margin: 16px 0 8px; }
-    h4 { margin: 0 0 12px; color: #2d3748; font-size: 15px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 24px; font-size: 14px; margin-bottom: 12px; }
-    code { background: #edf2f7; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
-    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
-    .btn { padding: 8px 16px; border: 1px solid #cbd5e0; background: white; border-radius: 6px; cursor: pointer; font-size: 14px; }
-    .btn.primary { background: #1a365d; color: white; border-color: #1a365d; }
-    .btn.success { background: #2f855a; color: white; border-color: #2f855a; }
-    .btn.danger { background: #c53030; color: white; border-color: #c53030; }
-    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-    .inline-form { background: #f7fafc; padding: 16px; border-radius: 8px; margin-top: 12px; border: 1px solid #e2e8f0; }
-    .inline-form.sticky { margin-top: 16px; }
-    .inline-form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
-    .inline-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #4a5568; }
-    .inline-form label.full { display: block; margin-bottom: 8px; }
-    .inline-form input, .inline-form select { padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; }
-    .inline-form .actions { justify-content: flex-end; margin-top: 12px; }
-    .table-wrap { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow: hidden; }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { padding: 8px 12px; text-align: left; }
-    th { background: #f7fafc; color: #4a5568; font-weight: 600; border-bottom: 1px solid #e2e8f0; }
-    td { border-bottom: 1px solid #edf2f7; }
-    tr.pagada { opacity: 0.65; }
-    .r { text-align: right; }
-    .badge { padding: 2px 10px; border-radius: 12px; font-size: 12px; }
-    .b-activo, .c-pagada { background: #c6f6d5; color: #22543d; }
-    .b-pendiente, .c-pendiente { background: #feebc8; color: #7b341e; }
-    .b-aprobado { background: #bee3f8; color: #2a4365; }
-    .b-finalizado { background: #e2e8f0; color: #4a5568; }
-    .b-mora, .b-rechazado, .c-vencida { background: #fed7d7; color: #742a2a; }
-    .c-parcial { background: #bee3f8; color: #2a4365; }
-    .muted { color: #718096; }
-    .center { text-align: center; }
-    .totals { display: flex; justify-content: flex-end; gap: 24px; margin-top: 12px; font-size: 14px; color: #4a5568; }
-    .hint { color: #718096; font-size: 13px; }
-    .err { color: #c53030; background: #fff5f5; padding: 10px; border-radius: 6px; margin: 8px 0; }
-    .ok { background: #f0fff4; border: 1px solid #9ae6b4; color: #22543d; padding: 10px; border-radius: 6px; margin-top: 12px; }
-    .ok a { color: #22543d; font-weight: 500; }
-    .link-btn { background: none; border: none; color: #2c5282; cursor: pointer; font-size: 13px; padding: 0; font-weight: 500; }
-    .link-btn:hover { text-decoration: underline; }
-  `],
 })
 export class PrestamoDetail implements OnInit {
   private route = inject(ActivatedRoute);
@@ -269,12 +340,183 @@ export class PrestamoDetail implements OnInit {
   // Clave de idempotencia del intento de pago en curso (estable entre reintentos).
   private payKey: string | null = null;
 
+  // ─── Garantías ───
+  garantias = signal<Garantia[]>([]);
+  thumbs = signal<Record<string, string>>({}); // imagen.id -> object URL
+  // Subir/editar garantías: cajero/admin (igual que el backend).
+  puedeEditar = computed(() =>
+    this.keycloak.roles().includes('admin') || this.keycloak.roles().includes('cajero'),
+  );
+
+  // Form de nueva garantía
+  mostrarNueva = signal(false);
+  guardandoGarantia = signal(false);
+  nuevaError = signal<string | null>(null);
+  subiendoEn = signal<string | null>(null); // gid en subida de imagen
+  nuevoSubtipo: SubtipoGarantia = 'vehiculo';
+  nuevoValor: number | null = null;
+  nuevoDescripcion = '';
+  nuevoDatos: Record<string, any> = {};
+
+  // Campos de cada subtipo (deben coincidir con la validación del backend).
+  private readonly camposPorSubtipo: Record<SubtipoGarantia, { key: string; label: string; required?: boolean; type?: string }[]> = {
+    vehiculo: [
+      { key: 'placa', label: 'Placa', required: true },
+      { key: 'marca', label: 'Marca', required: true },
+      { key: 'modelo', label: 'Modelo' },
+      { key: 'anio', label: 'Año', type: 'number' },
+      { key: 'color', label: 'Color' },
+      { key: 'nro_motor', label: 'Nº motor' },
+      { key: 'nro_chasis', label: 'Nº chasis' },
+    ],
+    inmueble: [
+      { key: 'tipo_inmueble', label: 'Tipo (casa/terreno/local)', required: true },
+      { key: 'direccion', label: 'Dirección', required: true },
+      { key: 'matricula_folio', label: 'Matrícula / folio' },
+      { key: 'superficie_m2', label: 'Superficie (m²)', type: 'number' },
+      { key: 'gravamenes', label: 'Gravámenes' },
+    ],
+    garante: [
+      { key: 'nombres', label: 'Nombres', required: true },
+      { key: 'apellidos', label: 'Apellidos' },
+      { key: 'ci', label: 'CI', required: true },
+      { key: 'telefono', label: 'Teléfono' },
+      { key: 'direccion', label: 'Dirección' },
+      { key: 'actividad', label: 'Actividad' },
+    ],
+    mueble: [
+      { key: 'descripcion', label: 'Descripción', required: true },
+      { key: 'ubicacion', label: 'Ubicación' },
+      { key: 'marca', label: 'Marca' },
+      { key: 'cantidad', label: 'Cantidad', type: 'number' },
+    ],
+  };
+
+  camposActuales() { return this.camposPorSubtipo[this.nuevoSubtipo]; }
+  camposDe(subtipo: SubtipoGarantia) { return this.camposPorSubtipo[subtipo]; }
+  subtipoLabel(s: SubtipoGarantia): string {
+    return { vehiculo: 'Vehículo', inmueble: 'Inmueble', garante: 'Garante', mueble: 'Bien mueble' }[s] ?? s;
+  }
+
+  // Color de badge por estado de préstamo o de cuota.
+  badge(estado: string): string {
+    switch (estado) {
+      case 'activo':
+      case 'pagada':
+        return 'bg-green-100 text-green-800';
+      case 'mora':
+      case 'rechazado':
+      case 'vencida':
+        return 'bg-red-100 text-red-800';
+      case 'finalizado':
+        return 'bg-slate-200 text-slate-700';
+      case 'pendiente':
+      case 'aprobado':
+      case 'parcial':
+        return 'bg-orange-100 text-orange-800';
+      default:
+        return 'bg-slate-200 text-slate-600';
+    }
+  }
+
   totalCapital = computed(() => this.cuotas().reduce((s, c) => s + c.capital, 0));
   totalInteres = computed(() => this.cuotas().reduce((s, c) => s + c.interes, 0));
   totalGeneral = computed(() => this.cuotas().reduce((s, c) => s + c.total, 0));
 
   ngOnInit() {
     this.reload();
+    this.loadGarantias();
+  }
+
+  // ─── Garantías ───
+  loadGarantias() {
+    const id = this.route.snapshot.paramMap.get('id');
+    if (!id) return;
+    this.loanSvc.listGarantias(id).subscribe({
+      next: r => {
+        this.garantias.set(r.items);
+        // Revoca miniaturas anteriores y descarga las imágenes (autenticado → blob).
+        Object.values(this.thumbs()).forEach(u => URL.revokeObjectURL(u));
+        this.thumbs.set({});
+        for (const g of r.items) {
+          for (const img of g.imagenes ?? []) {
+            this.loanSvc.downloadImagen(id, g.id, img.id).subscribe({
+              next: blob => this.thumbs.update(t => ({ ...t, [img.id]: URL.createObjectURL(blob) })),
+            });
+          }
+        }
+      },
+    });
+  }
+
+  toggleNuevaGarantia() {
+    this.mostrarNueva.update(v => !v);
+    this.nuevaError.set(null);
+    if (this.mostrarNueva()) this.resetNueva();
+  }
+
+  onSubtipoChange() {
+    this.nuevoDatos = {};
+    this.nuevaError.set(null);
+  }
+
+  private resetNueva() {
+    this.nuevoSubtipo = 'vehiculo';
+    this.nuevoValor = null;
+    this.nuevoDescripcion = '';
+    this.nuevoDatos = {};
+  }
+
+  crearGarantia() {
+    const id = this.prestamo()?.id;
+    if (!id) return;
+    // Normaliza numéricos (año, superficie, cantidad) según el catálogo.
+    const datos: Record<string, any> = {};
+    for (const campo of this.camposActuales()) {
+      const v = this.nuevoDatos[campo.key];
+      if (v === undefined || v === null || v === '') continue;
+      datos[campo.key] = campo.type === 'number' ? Number(v) : v;
+    }
+    this.guardandoGarantia.set(true);
+    this.nuevaError.set(null);
+    this.loanSvc.createGarantia(id, {
+      subtipo: this.nuevoSubtipo,
+      descripcion: this.nuevoDescripcion || undefined,
+      valor_estimado: this.nuevoValor ?? undefined,
+      datos,
+    }).subscribe({
+      next: () => {
+        this.guardandoGarantia.set(false);
+        this.mostrarNueva.set(false);
+        this.loadGarantias();
+      },
+      error: e => { this.nuevaError.set(e.error?.error || e.message); this.guardandoGarantia.set(false); },
+    });
+  }
+
+  eliminarGarantia(gid: string) {
+    const id = this.prestamo()?.id;
+    if (!id) return;
+    this.loanSvc.deleteGarantia(id, gid).subscribe({ next: () => this.loadGarantias() });
+  }
+
+  onFileGarantia(ev: Event, gid: string) {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = ''; // permite re-seleccionar el mismo archivo
+    const id = this.prestamo()?.id;
+    if (!file || !id) return;
+    this.subiendoEn.set(gid);
+    this.loanSvc.uploadImagen(id, gid, file).subscribe({
+      next: () => { this.subiendoEn.set(null); this.loadGarantias(); },
+      error: () => { this.subiendoEn.set(null); },
+    });
+  }
+
+  eliminarImagen(gid: string, iid: string) {
+    const id = this.prestamo()?.id;
+    if (!id) return;
+    this.loanSvc.deleteImagen(id, gid, iid).subscribe({ next: () => this.loadGarantias() });
   }
 
   reload() {

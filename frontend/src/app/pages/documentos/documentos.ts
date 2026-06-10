@@ -7,10 +7,10 @@ import { DocumentService, Documento } from '../../core/services/document.service
   selector: 'app-documentos',
   imports: [CommonModule, FormsModule],
   template: `
-    <div class="head">
-      <h2>Documentos</h2>
-      <div class="filters">
-        <select [(ngModel)]="tipo" (change)="reload()">
+    <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <h2 class="m-0 text-xl font-semibold text-ink">Documentos</h2>
+      <div class="flex flex-wrap items-center gap-2">
+        <select [(ngModel)]="tipo" (change)="reload()" class="ui-input w-full max-w-xs">
           <option value="">Todos los tipos</option>
           <option value="contrato">Contrato</option>
           <option value="plan_pagos">Plan de pagos</option>
@@ -18,84 +18,61 @@ import { DocumentService, Documento } from '../../core/services/document.service
           <option value="estado_cuenta">Estado de cuenta</option>
           <option value="carta_mora">Carta de mora</option>
         </select>
-        <span class="gen">
-          <input [(ngModel)]="clienteIdGen" placeholder="cliente_id (UUID)" />
-          <button class="btn" (click)="generarEstado()" [disabled]="generando() || !clienteIdGen.trim()">
+        <span class="flex flex-wrap items-center gap-2">
+          <input [(ngModel)]="clienteIdGen" placeholder="cliente_id (UUID)" class="ui-input w-full max-w-xs">
+          <button (click)="generarEstado()" [disabled]="generando() || !clienteIdGen.trim()"
+                  class="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white transition hover:bg-navy-light disabled:cursor-not-allowed disabled:opacity-50">
             {{ generando() ? 'Generando...' : 'Generar estado de cuenta' }}
           </button>
         </span>
       </div>
     </div>
 
-    @if (loading()) { <p class="hint">Cargando...</p> }
-    @if (error()) { <p class="err">{{ error() }}</p> }
+    @if (loading()) { <p class="mb-2 text-sm text-muted">Cargando...</p> }
+    @if (error()) { <p class="mb-2 rounded-md bg-red-50 p-3 text-sm text-red-600">{{ error() }}</p> }
 
-    <div class="table-wrap">
-      <table>
+    <div class="overflow-x-auto rounded-lg bg-white shadow-sm">
+      <table class="w-full min-w-[720px] border-collapse text-sm">
         <thead>
-          <tr>
-            <th>Tipo</th><th>Archivo</th><th>Referencia</th>
-            <th class="r">Tamaño</th><th>Estado</th><th>Generado</th><th></th>
+          <tr class="border-b border-slate-200 bg-slate-50 text-left text-slate-600">
+            <th class="px-3 py-2 font-semibold">Tipo</th>
+            <th class="px-3 py-2 font-semibold">Archivo</th>
+            <th class="px-3 py-2 font-semibold">Referencia</th>
+            <th class="px-3 py-2 text-right font-semibold">Tamaño</th>
+            <th class="px-3 py-2 font-semibold">Estado</th>
+            <th class="px-3 py-2 font-semibold">Generado</th>
+            <th class="px-3 py-2"></th>
           </tr>
         </thead>
         <tbody>
           @for (d of items(); track d.id) {
-            <tr>
-              <td><span class="badge" [class]="'t-' + d.tipo">{{ tipoLabel(d.tipo) }}</span></td>
-              <td>{{ d.nombre_archivo }}</td>
-              <td>
-                @if (d.prestamo_id) { <code title="préstamo">P:{{ d.prestamo_id | slice:0:8 }}</code> }
-                @if (d.cliente_id) { <code title="cliente">C:{{ d.cliente_id | slice:0:8 }}</code> }
-                @if (d.pago_id) { <code title="pago">$:{{ d.pago_id | slice:0:8 }}</code> }
+            <tr class="border-b border-slate-100 last:border-0">
+              <td class="px-3 py-2"><span class="rounded-full px-2.5 py-0.5 text-xs font-medium capitalize" [class]="tipoBadge(d.tipo)">{{ tipoLabel(d.tipo) }}</span></td>
+              <td class="px-3 py-2">{{ d.nombre_archivo }}</td>
+              <td class="px-3 py-2 space-x-1">
+                @if (d.prestamo_id) { <code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs" title="préstamo">P:{{ d.prestamo_id | slice:0:8 }}</code> }
+                @if (d.cliente_id) { <code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs" title="cliente">C:{{ d.cliente_id | slice:0:8 }}</code> }
+                @if (d.pago_id) { <code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs" title="pago">$:{{ d.pago_id | slice:0:8 }}</code> }
               </td>
-              <td class="r muted">{{ d.tamanio_kb ? d.tamanio_kb + ' KB' : '—' }}</td>
-              <td><span class="badge estado">{{ d.estado }}</span></td>
-              <td class="muted">{{ d.generado_at | slice:0:10 }} {{ d.generado_at | slice:11:16 }}</td>
-              <td>
-                <button class="link-btn" (click)="descargar(d)" [disabled]="descargando() === d.id">
+              <td class="px-3 py-2 text-right text-muted">{{ d.tamanio_kb ? d.tamanio_kb + ' KB' : '—' }}</td>
+              <td class="px-3 py-2"><span class="rounded-full px-2.5 py-0.5 text-xs font-medium capitalize" [class]="badge(d.estado)">{{ d.estado }}</span></td>
+              <td class="px-3 py-2 text-muted">{{ d.generado_at | slice:0:10 }} {{ d.generado_at | slice:11:16 }}</td>
+              <td class="px-3 py-2">
+                <button (click)="descargar(d)" [disabled]="descargando() === d.id"
+                        class="text-navy-light hover:underline disabled:cursor-not-allowed disabled:text-muted disabled:no-underline">
                   {{ descargando() === d.id ? '...' : 'Descargar' }}
                 </button>
               </td>
             </tr>
           } @empty {
-            <tr><td colspan="7" class="muted center">Sin documentos</td></tr>
+            <tr><td colspan="7" class="px-3 py-6 text-center text-muted">Sin documentos</td></tr>
           }
         </tbody>
       </table>
     </div>
 
-    <p class="hint">Mostrando {{ items().length }} de {{ total() }} documentos</p>
+    <p class="mt-2 text-sm text-muted">Mostrando {{ items().length }} de {{ total() }} documentos</p>
   `,
-  styles: [`
-    h2 { color: #2d3748; margin: 0; }
-    .head { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
-    .filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-    .gen { display: flex; gap: 6px; }
-    select, input { padding: 6px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 13px; }
-    input { width: 220px; }
-    .btn { background: #2c5282; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
-    .btn:disabled { background: #a0aec0; cursor: not-allowed; }
-    .table-wrap { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow: hidden; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { padding: 8px 12px; text-align: left; }
-    th { background: #f7fafc; color: #4a5568; font-weight: 600; border-bottom: 1px solid #e2e8f0; }
-    td { border-bottom: 1px solid #edf2f7; }
-    .r { text-align: right; }
-    code { background: #edf2f7; padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 4px; }
-    .badge { padding: 2px 10px; border-radius: 12px; font-size: 12px; background: #e2e8f0; color: #2d3748; }
-    .t-contrato { background: #c6f6d5; color: #22543d; }
-    .t-plan_pagos { background: #bee3f8; color: #2a4365; }
-    .t-recibo { background: #feebc8; color: #7b341e; }
-    .t-estado_cuenta { background: #e9d8fd; color: #44337a; }
-    .t-carta_mora { background: #fed7d7; color: #822727; }
-    .estado { background: #edf2f7; color: #4a5568; }
-    .muted { color: #718096; } .center { text-align: center; }
-    .hint { color: #718096; font-size: 13px; margin-top: 8px; }
-    .err { color: #c53030; background: #fff5f5; padding: 10px; border-radius: 6px; }
-    .link-btn { background: none; border: none; color: #2c5282; cursor: pointer; font-size: 13px; padding: 0; }
-    .link-btn:hover { text-decoration: underline; }
-    .link-btn:disabled { color: #a0aec0; cursor: not-allowed; }
-  `],
 })
 export class Documentos implements OnInit {
   private svc = inject(DocumentService);
@@ -148,5 +125,28 @@ export class Documentos implements OnInit {
   tipoLabel(t: string): string {
     return { contrato: 'Contrato', plan_pagos: 'Plan de pagos', recibo: 'Recibo',
       estado_cuenta: 'Estado de cuenta', carta_mora: 'Carta de mora' }[t] ?? t;
+  }
+
+  // Color de badge por estado de generación del documento.
+  badge(estado: string): string {
+    switch (estado) {
+      case 'generado': return 'bg-green-100 text-green-800';
+      case 'error': return 'bg-red-100 text-red-800';
+      case 'pendiente': return 'bg-orange-100 text-orange-800';
+      case 'enviado': return 'bg-slate-200 text-slate-700';
+      default: return 'bg-slate-200 text-slate-600';
+    }
+  }
+
+  // Color de badge por tipo de documento (preserva la paleta original por tipo).
+  tipoBadge(tipo: string): string {
+    switch (tipo) {
+      case 'contrato': return 'bg-green-100 text-green-800';
+      case 'plan_pagos': return 'bg-blue-100 text-blue-800';
+      case 'recibo': return 'bg-orange-100 text-orange-800';
+      case 'estado_cuenta': return 'bg-purple-100 text-purple-800';
+      case 'carta_mora': return 'bg-red-100 text-red-800';
+      default: return 'bg-slate-200 text-slate-600';
+    }
   }
 }

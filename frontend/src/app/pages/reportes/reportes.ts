@@ -2,121 +2,117 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule, CurrencyPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
-  ReportService, ReporteDiario, ReporteMensual, CuotaVencida,
+  ReportService, ReporteDiario, ReporteMensual, CuotaVencida, ExportFormat,
 } from '../../core/services/report.service';
+
+type ReportPath = 'daily' | 'monthly' | 'overdue';
 
 @Component({
   selector: 'app-reportes',
   imports: [CommonModule, FormsModule, CurrencyPipe],
   template: `
-    <h2>Reportes</h2>
-    @if (error()) { <p class="err">{{ error() }}</p> }
+    <h2 class="text-xl font-semibold text-ink">Reportes</h2>
+    @if (error()) { <p class="mt-3 rounded-md bg-red-50 p-3 text-sm text-red-600">{{ error() }}</p> }
 
-    <div class="grid">
+    <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
       <!-- ─── Reporte diario ─── -->
-      <section class="card">
-        <header><h3>Reporte diario</h3>
-          <input type="date" [(ngModel)]="fecha" (change)="loadDiario()" />
+      <section class="rounded-lg bg-white p-4 shadow-sm">
+        <header class="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 class="text-base font-semibold text-ink">Reporte diario</h3>
+          <div class="flex flex-wrap items-center gap-2">
+            <input type="date" class="ui-input" [(ngModel)]="fecha" (change)="loadDiario()" />
+            <ng-container [ngTemplateOutlet]="dl" [ngTemplateOutletContext]="{ path: 'daily' }"></ng-container>
+          </div>
         </header>
-        @if (loadingDiario()) { <p class="hint">Cargando...</p> }
+        @if (loadingDiario()) { <p class="text-sm text-muted">Cargando...</p> }
         @if (diario(); as d) {
-          <dl>
-            <div><dt>Ingresos</dt><dd class="money">{{ d.ingresos | currency:'BOB':'symbol-narrow':'1.2-2' }}</dd></div>
-            <div><dt>Mora cobrada</dt><dd>{{ d.mora_cobrada | currency:'BOB':'symbol-narrow':'1.2-2' }}</dd></div>
-            <div><dt>Pagos recibidos</dt><dd>{{ d.pagos_recibidos }}</dd></div>
-            <div><dt>Préstamos nuevos</dt><dd>{{ d.prestamos_nuevos }}</dd></div>
-            <div><dt>Clientes nuevos</dt><dd>{{ d.clientes_nuevos }}</dd></div>
+          <dl class="m-0">
+            <div class="flex justify-between border-b border-slate-100 py-1.5"><dt class="text-muted">Ingresos</dt><dd class="m-0 font-semibold text-green-700">{{ d.ingresos | currency:'BOB':'symbol-narrow':'1.2-2' }}</dd></div>
+            <div class="flex justify-between border-b border-slate-100 py-1.5"><dt class="text-muted">Mora cobrada</dt><dd class="m-0 font-semibold text-ink">{{ d.mora_cobrada | currency:'BOB':'symbol-narrow':'1.2-2' }}</dd></div>
+            <div class="flex justify-between border-b border-slate-100 py-1.5"><dt class="text-muted">Pagos recibidos</dt><dd class="m-0 font-semibold text-ink">{{ d.pagos_recibidos }}</dd></div>
+            <div class="flex justify-between border-b border-slate-100 py-1.5"><dt class="text-muted">Préstamos nuevos</dt><dd class="m-0 font-semibold text-ink">{{ d.prestamos_nuevos }}</dd></div>
+            <div class="flex justify-between border-b border-slate-100 py-1.5"><dt class="text-muted">Clientes nuevos</dt><dd class="m-0 font-semibold text-ink">{{ d.clientes_nuevos }}</dd></div>
           </dl>
         }
       </section>
 
       <!-- ─── Reporte mensual ─── -->
-      <section class="card">
-        <header><h3>Reporte mensual</h3>
-          <span class="period">
-            <input type="number" min="2000" max="2100" [(ngModel)]="anio" (change)="loadMensual()" />
-            <select [(ngModel)]="mes" (change)="loadMensual()">
-              @for (m of meses; track m.v) { <option [value]="m.v">{{ m.n }}</option> }
-            </select>
-          </span>
+      <section class="rounded-lg bg-white p-4 shadow-sm">
+        <header class="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 class="text-base font-semibold text-ink">Reporte mensual</h3>
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="flex gap-1.5">
+              <input type="number" min="2000" max="2100" class="ui-input w-20" [(ngModel)]="anio" (change)="loadMensual()" />
+              <select class="ui-input" [(ngModel)]="mes" (change)="loadMensual()">
+                @for (m of meses; track m.v) { <option [value]="m.v">{{ m.n }}</option> }
+              </select>
+            </span>
+            <ng-container [ngTemplateOutlet]="dl" [ngTemplateOutletContext]="{ path: 'monthly' }"></ng-container>
+          </div>
         </header>
-        @if (loadingMensual()) { <p class="hint">Cargando...</p> }
+        @if (loadingMensual()) { <p class="text-sm text-muted">Cargando...</p> }
         @if (mensual(); as m) {
-          <dl>
-            <div><dt>Ingresos</dt><dd class="money">{{ m.ingresos | currency:'BOB':'symbol-narrow':'1.2-2' }}</dd></div>
-            <div><dt>Intereses pagados</dt><dd>{{ m.intereses_pagados | currency:'BOB':'symbol-narrow':'1.2-2' }}</dd></div>
-            <div><dt>Mora cobrada</dt><dd>{{ m.mora_cobrada | currency:'BOB':'symbol-narrow':'1.2-2' }}</dd></div>
-            <div><dt>Pagos recibidos</dt><dd>{{ m.pagos_recibidos }}</dd></div>
-            <div><dt>Préstamos nuevos</dt><dd>{{ m.prestamos_nuevos }}</dd></div>
-            <div><dt>Clientes nuevos</dt><dd>{{ m.clientes_nuevos }}</dd></div>
+          <dl class="m-0">
+            <div class="flex justify-between border-b border-slate-100 py-1.5"><dt class="text-muted">Ingresos</dt><dd class="m-0 font-semibold text-green-700">{{ m.ingresos | currency:'BOB':'symbol-narrow':'1.2-2' }}</dd></div>
+            <div class="flex justify-between border-b border-slate-100 py-1.5"><dt class="text-muted">Intereses pagados</dt><dd class="m-0 font-semibold text-ink">{{ m.intereses_pagados | currency:'BOB':'symbol-narrow':'1.2-2' }}</dd></div>
+            <div class="flex justify-between border-b border-slate-100 py-1.5"><dt class="text-muted">Mora cobrada</dt><dd class="m-0 font-semibold text-ink">{{ m.mora_cobrada | currency:'BOB':'symbol-narrow':'1.2-2' }}</dd></div>
+            <div class="flex justify-between border-b border-slate-100 py-1.5"><dt class="text-muted">Pagos recibidos</dt><dd class="m-0 font-semibold text-ink">{{ m.pagos_recibidos }}</dd></div>
+            <div class="flex justify-between border-b border-slate-100 py-1.5"><dt class="text-muted">Préstamos nuevos</dt><dd class="m-0 font-semibold text-ink">{{ m.prestamos_nuevos }}</dd></div>
+            <div class="flex justify-between border-b border-slate-100 py-1.5"><dt class="text-muted">Clientes nuevos</dt><dd class="m-0 font-semibold text-ink">{{ m.clientes_nuevos }}</dd></div>
           </dl>
         }
       </section>
     </div>
 
     <!-- ─── Cuotas vencidas (mora) ─── -->
-    <section class="card full">
-      <header><h3>Cuotas vencidas</h3>
-        <span class="hint">{{ totalVencidas() }} en mora</span>
+    <section class="mt-4">
+      <header class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h3 class="text-base font-semibold text-ink">Cuotas vencidas</h3>
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-sm text-muted">{{ totalVencidas() }} en mora</span>
+          <ng-container [ngTemplateOutlet]="dl" [ngTemplateOutletContext]="{ path: 'overdue' }"></ng-container>
+        </div>
       </header>
-      @if (loadingVencidas()) { <p class="hint">Cargando...</p> }
-      <div class="table-wrap">
-        <table>
+      @if (loadingVencidas()) { <p class="text-sm text-muted">Cargando...</p> }
+      <div class="overflow-x-auto rounded-lg bg-white shadow-sm">
+        <table class="w-full min-w-[720px] border-collapse text-sm">
           <thead>
-            <tr>
-              <th>Cliente</th><th>Préstamo</th><th class="c">Cuota #</th>
-              <th>Vencimiento</th><th class="r">Días</th>
-              <th class="r">Saldo</th><th class="r">Mora</th><th>Estado</th>
+            <tr class="border-b border-slate-200 bg-slate-50 text-left text-slate-600">
+              <th class="px-3 py-2 font-semibold">Cliente</th><th class="px-3 py-2 font-semibold">Préstamo</th><th class="px-3 py-2 text-center font-semibold">Cuota #</th>
+              <th class="px-3 py-2 font-semibold">Vencimiento</th><th class="px-3 py-2 text-right font-semibold">Días</th>
+              <th class="px-3 py-2 text-right font-semibold">Saldo</th><th class="px-3 py-2 text-right font-semibold">Mora</th><th class="px-3 py-2 font-semibold">Estado</th>
             </tr>
           </thead>
           <tbody>
             @for (c of vencidas(); track c.cuota_id) {
-              <tr>
-                <td><code>{{ c.cliente_id | slice:0:8 }}</code></td>
-                <td><code>{{ c.prestamo_id | slice:0:8 }}</code></td>
-                <td class="c">{{ c.numero }}</td>
-                <td class="muted">{{ c.fecha_vencimiento | slice:0:10 }}</td>
-                <td class="r" [class.danger]="c.dias_vencidos > 30">{{ c.dias_vencidos }}</td>
-                <td class="r">{{ c.saldo_pendiente | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
-                <td class="r money">{{ c.mora_acumulada | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
-                <td><span class="badge">{{ c.estado }}</span></td>
+              <tr class="border-b border-slate-100 last:border-0">
+                <td class="px-3 py-2"><code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{{ c.cliente_id | slice:0:8 }}</code></td>
+                <td class="px-3 py-2"><code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{{ c.prestamo_id | slice:0:8 }}</code></td>
+                <td class="px-3 py-2 text-center">{{ c.numero }}</td>
+                <td class="px-3 py-2 text-muted">{{ c.fecha_vencimiento | slice:0:10 }}</td>
+                <td class="px-3 py-2 text-right" [class.text-red-600]="c.dias_vencidos > 30" [class.font-bold]="c.dias_vencidos > 30">{{ c.dias_vencidos }}</td>
+                <td class="px-3 py-2 text-right">{{ c.saldo_pendiente | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
+                <td class="px-3 py-2 text-right font-semibold" [class]="c.mora_acumulada > 0 ? 'text-red-600' : 'text-muted'">{{ c.mora_acumulada | currency:'BOB':'symbol-narrow':'1.2-2' }}</td>
+                <td class="px-3 py-2"><span class="rounded-full px-2.5 py-0.5 text-xs font-medium capitalize" [class]="badge(c.estado)">{{ c.estado }}</span></td>
               </tr>
             } @empty {
-              <tr><td colspan="8" class="muted center">Sin cuotas vencidas 🎉</td></tr>
+              <tr><td colspan="8" class="px-3 py-6 text-center text-muted">Sin cuotas vencidas 🎉</td></tr>
             }
           </tbody>
         </table>
       </div>
     </section>
+
+    <!-- Grupo de botones de descarga reutilizable -->
+    <ng-template #dl let-path="path">
+      <span class="inline-flex flex-wrap items-center gap-1">
+        <span class="text-xs uppercase tracking-wide text-slate-400">Exportar</span>
+        <button class="rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-navy-light hover:bg-sky-50 disabled:opacity-50" (click)="descargar(path, 'csv')" [disabled]="descargando() === path + ':csv'">CSV</button>
+        <button class="rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-navy-light hover:bg-sky-50 disabled:opacity-50" (click)="descargar(path, 'xlsx')" [disabled]="descargando() === path + ':xlsx'">Excel</button>
+        <button class="rounded-md border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-navy-light hover:bg-sky-50 disabled:opacity-50" (click)="descargar(path, 'pdf')" [disabled]="descargando() === path + ':pdf'">PDF</button>
+      </span>
+    </ng-template>
   `,
-  styles: [`
-    h2, h3 { color: #2d3748; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 16px; }
-    .card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 16px; }
-    .card.full { padding: 16px; }
-    .card header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
-    .card h3 { margin: 0; font-size: 15px; }
-    .period { display: flex; gap: 6px; }
-    input, select { padding: 5px 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 13px; }
-    input[type=number] { width: 80px; }
-    dl { margin: 0; display: grid; grid-template-columns: 1fr; gap: 4px; }
-    dl div { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #edf2f7; }
-    dt { color: #718096; font-size: 13px; }
-    dd { margin: 0; font-weight: 600; color: #2d3748; }
-    .money { color: #2f855a; }
-    .table-wrap { overflow: hidden; border-radius: 6px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { padding: 8px 12px; text-align: left; }
-    th { background: #f7fafc; color: #4a5568; font-weight: 600; border-bottom: 1px solid #e2e8f0; }
-    td { border-bottom: 1px solid #edf2f7; }
-    .r { text-align: right; } .c { text-align: center; }
-    .danger { color: #c53030; font-weight: 700; }
-    code { background: #edf2f7; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
-    .badge { padding: 2px 10px; border-radius: 12px; font-size: 12px; background: #fed7d7; color: #822727; }
-    .muted { color: #718096; } .center { text-align: center; }
-    .hint { color: #718096; font-size: 13px; }
-    .err { color: #c53030; background: #fff5f5; padding: 10px; border-radius: 6px; }
-  `],
 })
 export class Reportes implements OnInit {
   private svc = inject(ReportService);
@@ -139,7 +135,32 @@ export class Reportes implements OnInit {
   loadingDiario = signal(false);
   loadingMensual = signal(false);
   loadingVencidas = signal(false);
+  descargando = signal<string | null>(null);
   error = signal<string | null>(null);
+
+  // Color de badge por estado de cuota (mismo vocabulario que cliente-detail).
+  badge(estado: string): string {
+    switch (estado) {
+      case 'activo':
+      case 'pagada':
+      case 'total':
+        return 'bg-green-100 text-green-800';
+      case 'mora':
+      case 'anulado':
+      case 'bloqueado':
+      case 'rechazado':
+      case 'vencida':
+        return 'bg-red-100 text-red-800';
+      case 'finalizado':
+        return 'bg-slate-200 text-slate-700';
+      case 'pendiente':
+      case 'inactivo':
+      case 'parcial':
+        return 'bg-orange-100 text-orange-800';
+      default:
+        return 'bg-slate-200 text-slate-600';
+    }
+  }
 
   ngOnInit() {
     this.loadDiario();
@@ -169,5 +190,39 @@ export class Reportes implements OnInit {
       next: r => { this.vencidas.set(r.items); this.totalVencidas.set(r.total); this.loadingVencidas.set(false); },
       error: e => { this.error.set(e.error?.error || e.message); this.loadingVencidas.set(false); },
     });
+  }
+
+  // Descarga el reporte indicado con los parámetros del filtro vigente. El
+  // nombre de archivo se arma aquí para no depender de Content-Disposition.
+  descargar(path: ReportPath, format: ExportFormat) {
+    const mm = String(this.mes).padStart(2, '0');
+    const cfg: Record<ReportPath, { params: Record<string, string>; base: string }> = {
+      daily: { params: { date: this.fecha }, base: `reporte-diario-${this.fecha}` },
+      monthly: { params: { year: String(this.anio), month: String(this.mes) }, base: `reporte-mensual-${this.anio}-${mm}` },
+      overdue: { params: { limit: '100' }, base: `cuotas-vencidas-${this.fecha}` },
+    };
+    const { params, base } = cfg[path];
+
+    this.descargando.set(`${path}:${format}`);
+    this.error.set(null);
+    this.svc.export(path, format, params).subscribe({
+      next: blob => {
+        this.descargando.set(null);
+        this.saveBlob(blob, `${base}.${format}`);
+      },
+      error: () => {
+        this.descargando.set(null);
+        this.error.set('No se pudo descargar el reporte');
+      },
+    });
+  }
+
+  private saveBlob(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 }

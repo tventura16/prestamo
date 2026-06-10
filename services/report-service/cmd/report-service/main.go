@@ -17,6 +17,7 @@ import (
 	"github.com/prestamos/report-service/internal/auth"
 	"github.com/prestamos/report-service/internal/config"
 	"github.com/prestamos/report-service/internal/db"
+	"github.com/prestamos/report-service/internal/docs"
 	"github.com/prestamos/report-service/internal/handler"
 	"github.com/prestamos/report-service/internal/repository"
 	"github.com/prestamos/report-service/internal/service"
@@ -109,7 +110,7 @@ func main() {
 	clientesRepo := repository.NewClientesRepository(clientesPool)
 
 	reportSvc := service.NewReportService(pagosRepo, prestamosRepo, clientesRepo)
-	reportHandler := handler.NewReportHandler(reportSvc)
+	reportHandler := handler.NewReportHandler(reportSvc, verifier)
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -135,6 +136,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ready"})
 	})
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	docs.Register(r)
 
 	api := r.Group("")
 	if verifier != nil {

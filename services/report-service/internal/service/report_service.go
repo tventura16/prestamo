@@ -162,5 +162,34 @@ func (s *ReportService) PorCliente(ctx context.Context, clienteID uuid.UUID) (mo
 	}
 	rep.Prestamos = prestamos
 
+	// Datos del cliente (no fatal si falta).
+	if cli, err := s.clientes.GetCliente(ctx, clienteID); err != nil {
+		return rep, err
+	} else {
+		rep.Cliente = cli
+	}
+
+	// Elegibilidad para un nuevo préstamo según el historial (regla §7).
+	aprobarSiMora, maxActivos, err := s.prestamos.ParametrosElegibilidad(ctx)
+	if err != nil {
+		return rep, err
+	}
+	rep.Elegible, rep.MotivoInelegible = evaluarElegibilidad(rep, aprobarSiMora, maxActivos)
+
 	return rep, nil
+}
+
+// evaluarElegibilidad aplica las reglas de negocio: sin mora activa (salvo
+// parámetro) y por debajo del máximo de préstamos activos. "Mora activa"
+// significa tener cuotas vencidas impagas —igual que la regla que aplica el
+// loan-service al aprobar—, aunque el interés moratorio aún no se haya
+// devengado por el período de gracia.
+func evaluarElegibilidad(rep models.ReporteCliente, aprobarSiMora bool, maxActivos int) (bool, string) {
+	if (rep.CuotasVencidas > 0 || rep.MoraTotal > 0) && !aprobarSiMora {
+		return false, "el cliente tiene mora activa"
+	}
+	if maxActivos > 0 && rep.PrestamosActivos >= maxActivos {
+		return false, fmt.Sprintf("alcanzó el máximo de préstamos activos (%d)", maxActivos)
+	}
+	return true, ""
 }
