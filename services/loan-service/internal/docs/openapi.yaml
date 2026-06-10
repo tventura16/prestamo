@@ -169,6 +169,128 @@ paths:
       security:
         - bearerAuth: [admin, supervisor, cajero]
 
+  /loans/{id}/garantias:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Garantías]
+      summary: Listar garantías del préstamo
+      operationId: listGarantias
+      responses:
+        '200':
+          description: Garantías con sus imágenes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  items: { type: array, items: { $ref: '#/components/schemas/Garantia' } }
+      security:
+        - bearerAuth: [admin, supervisor, cajero]
+    post:
+      tags: [Garantías]
+      summary: Crear garantía
+      description: |
+        Crea una garantía con datos propios del subtipo. El objeto `datos` se
+        valida según `subtipo` (vehiculo/inmueble/garante/mueble); ver los
+        esquemas DatosVehiculo, DatosInmueble, DatosGarante, DatosMueble.
+      operationId: createGarantia
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateGarantiaInput' }
+      responses:
+        '201': { description: Garantía creada, content: { application/json: { schema: { $ref: '#/components/schemas/Garantia' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: Datos del subtipo inválidos o incompletos, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+      security:
+        - bearerAuth: [admin, cajero]
+
+  /loans/{id}/garantias/{gid}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: gid, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [Garantías]
+      summary: Obtener garantía
+      operationId: getGarantia
+      responses:
+        '200': { description: Garantía, content: { application/json: { schema: { $ref: '#/components/schemas/Garantia' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+      security:
+        - bearerAuth: [admin, supervisor, cajero]
+    delete:
+      tags: [Garantías]
+      summary: Eliminar garantía (y sus imágenes)
+      operationId: deleteGarantia
+      responses:
+        '200': { description: Eliminada }
+        '404': { $ref: '#/components/responses/NotFound' }
+      security:
+        - bearerAuth: [admin, cajero]
+
+  /loans/{id}/garantias/{gid}/imagenes:
+    post:
+      tags: [Garantías]
+      summary: Subir imagen de la garantía (multipart)
+      description: Imagen JPG/PNG/WEBP, máximo 5 MB; el tipo se valida por contenido.
+      operationId: uploadGarantiaImagen
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: gid, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                imagen: { type: string, format: binary }
+                descripcion: { type: string }
+              required: [imagen]
+      responses:
+        '201': { description: Imagen subida, content: { application/json: { schema: { $ref: '#/components/schemas/GarantiaImagen' } } } }
+        '413': { description: Imagen mayor a 5 MB, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '415': { description: Tipo no permitido, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+      security:
+        - bearerAuth: [admin, cajero]
+
+  /loans/{id}/garantias/{gid}/imagenes/{iid}/download:
+    get:
+      tags: [Garantías]
+      summary: Descargar imagen de la garantía
+      operationId: downloadGarantiaImagen
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: gid, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: iid, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Binario de la imagen
+          content:
+            image/*: { schema: { type: string, format: binary } }
+        '404': { $ref: '#/components/responses/NotFound' }
+      security:
+        - bearerAuth: [admin, supervisor, cajero]
+
+  /loans/{id}/garantias/{gid}/imagenes/{iid}:
+    delete:
+      tags: [Garantías]
+      summary: Eliminar imagen de la garantía
+      operationId: deleteGarantiaImagen
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: gid, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: iid, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Eliminada }
+        '404': { $ref: '#/components/responses/NotFound' }
+      security:
+        - bearerAuth: [admin, cajero]
+
 components:
   securitySchemes:
     bearerAuth:
@@ -192,6 +314,98 @@ components:
       content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
   schemas:
+    SubtipoGarantia:
+      type: string
+      enum: [vehiculo, inmueble, garante, mueble]
+
+    DatosVehiculo:
+      type: object
+      required: [placa, marca]
+      properties:
+        placa: { type: string }
+        marca: { type: string }
+        modelo: { type: string }
+        anio: { type: integer }
+        color: { type: string }
+        nro_motor: { type: string }
+        nro_chasis: { type: string }
+
+    DatosInmueble:
+      type: object
+      required: [tipo_inmueble, direccion]
+      properties:
+        tipo_inmueble: { type: string, enum: [casa, terreno, local] }
+        direccion: { type: string }
+        matricula_folio: { type: string }
+        superficie_m2: { type: number, format: double }
+        gravamenes: { type: string }
+
+    DatosGarante:
+      type: object
+      required: [nombres, ci]
+      properties:
+        nombres: { type: string }
+        apellidos: { type: string }
+        ci: { type: string }
+        telefono: { type: string }
+        direccion: { type: string }
+        actividad: { type: string }
+
+    DatosMueble:
+      type: object
+      required: [descripcion]
+      properties:
+        descripcion: { type: string }
+        ubicacion: { type: string }
+        marca: { type: string }
+        cantidad: { type: integer }
+
+    CreateGarantiaInput:
+      type: object
+      required: [subtipo, datos]
+      properties:
+        subtipo: { $ref: '#/components/schemas/SubtipoGarantia' }
+        descripcion: { type: string }
+        valor_estimado: { type: number, format: double, minimum: 0 }
+        moneda: { type: string, default: BOB }
+        cliente_garante_id: { type: [string, 'null'], format: uuid, description: Vincula el garante a un cliente existente (opcional) }
+        datos:
+          description: Campos propios del subtipo (uno de DatosVehiculo/DatosInmueble/DatosGarante/DatosMueble).
+          oneOf:
+            - { $ref: '#/components/schemas/DatosVehiculo' }
+            - { $ref: '#/components/schemas/DatosInmueble' }
+            - { $ref: '#/components/schemas/DatosGarante' }
+            - { $ref: '#/components/schemas/DatosMueble' }
+
+    GarantiaImagen:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        garantia_id: { type: string, format: uuid }
+        nombre_archivo: { type: string }
+        mime: { type: string }
+        tamanio_bytes: { type: integer, format: int64 }
+        descripcion: { type: [string, 'null'] }
+        subido_por: { type: [string, 'null'], format: uuid }
+        created_at: { type: string, format: date-time }
+
+    Garantia:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        prestamo_id: { type: string, format: uuid }
+        subtipo: { $ref: '#/components/schemas/SubtipoGarantia' }
+        descripcion: { type: [string, 'null'] }
+        valor_estimado: { type: [number, 'null'], format: double }
+        moneda: { type: string }
+        cliente_garante_id: { type: [string, 'null'], format: uuid }
+        datos: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        imagenes:
+          type: array
+          items: { $ref: '#/components/schemas/GarantiaImagen' }
+
     Error:
       type: object
       properties:

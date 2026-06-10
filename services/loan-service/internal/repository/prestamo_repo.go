@@ -32,7 +32,7 @@ func NewPrestamoRepository(pool *pgxpool.Pool) *PrestamoRepository {
 const prestamoColumns = `id, cliente_id, monto_solicitado, monto_aprobado,
 		tasa_interes, tipo_interes, fecha_solicitud, fecha_desembolso,
 		num_cuotas, frecuencia, estado, aprobado_por, observaciones,
-		tipo_garantia, created_at, updated_at`
+		created_at, updated_at`
 
 func scanPrestamo(row pgx.Row) (models.Prestamo, error) {
 	var p models.Prestamo
@@ -40,7 +40,7 @@ func scanPrestamo(row pgx.Row) (models.Prestamo, error) {
 		&p.ID, &p.ClienteID, &p.MontoSolicitado, &p.MontoAprobado,
 		&p.TasaInteres, &p.TipoInteres, &p.FechaSolicitud, &p.FechaDesembolso,
 		&p.NumCuotas, &p.Frecuencia, &p.Estado, &p.AprobadoPor, &p.Observaciones,
-		&p.TipoGarantia, &p.CreatedAt, &p.UpdatedAt,
+		&p.CreatedAt, &p.UpdatedAt,
 	)
 	return p, err
 }
@@ -52,13 +52,13 @@ func (r *PrestamoRepository) Create(ctx context.Context, in models.CreatePrestam
 	}
 
 	query := `INSERT INTO prestamos
-		(cliente_id, monto_solicitado, tasa_interes, tipo_interes, num_cuotas, frecuencia, observaciones, tipo_garantia)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		(cliente_id, monto_solicitado, tasa_interes, tipo_interes, num_cuotas, frecuencia, observaciones)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING ` + prestamoColumns
 
 	row := r.pool.QueryRow(ctx, query,
 		in.ClienteID, in.MontoSolicitado, in.TasaInteres, tipo,
-		in.NumCuotas, in.Frecuencia, in.Observaciones, in.TipoGarantia,
+		in.NumCuotas, in.Frecuencia, in.Observaciones,
 	)
 	p, err := scanPrestamo(row)
 	if err != nil {

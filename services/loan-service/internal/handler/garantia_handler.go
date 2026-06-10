@@ -18,7 +18,6 @@ import (
 
 const maxGarantiaBytes = 5 << 20 // 5 MiB
 
-// allowedMimes mapea el content-type detectado por contenido a su extensión.
 var allowedMimes = map[string]string{
 	"image/jpeg": ".jpg",
 	"image/png":  ".png",
@@ -35,17 +34,20 @@ func NewGarantiaHandler(repo *repository.GarantiaRepository, storePath string, v
 	return &GarantiaHandler{repo: repo, storePath: storePath, verifier: verifier}
 }
 
-// Register monta las rutas de garantías colgando de /loans/:id. Subir/eliminar
-// es operación de registro (cajero/admin); consultar/descargar, abierto a todo
-// rol autenticado.
+// Register monta las rutas de garantías (entidad + imágenes) bajo /loans/:id.
+// Crear/editar es operación de registro (cajero/admin); consultar/descargar,
+// abierto a todo rol autenticado.
 func (h *GarantiaHandler) Register(rg *gin.RouterGroup) {
-	rg.POST("/:id/garantias", h.verifier.GuardRole("admin", "cajero"), h.Upload)
+	rg.POST("/:id/garantias", h.verifier.GuardRole("admin", "cajero"), h.Create)
 	rg.GET("/:id/garantias", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.List)
-	rg.GET("/:id/garantias/:gid/download", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.Download)
+	rg.GET("/:id/garantias/:gid", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.Get)
 	rg.DELETE("/:id/garantias/:gid", h.verifier.GuardRole("admin", "cajero"), h.Delete)
+	rg.POST("/:id/garantias/:gid/imagenes", h.verifier.GuardRole("admin", "cajero"), h.UploadImagen)
+	rg.GET("/:id/garantias/:gid/imagenes/:iid/download", h.verifier.GuardRole("admin", "supervisor", "cajero"), h.DownloadImagen)
+	rg.DELETE("/:id/garantias/:gid/imagenes/:iid", h.verifier.GuardRole("admin", "cajero"), h.DeleteImagen)
 }
 
-func (h *GarantiaHandler) Upload(c *gin.Context) {
+func (h *GarantiaHandler) Create(c *gin.Context) {
 	prestamoID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "id de préstamo inválido"})
@@ -61,6 +63,107 @@ func (h *GarantiaHandler) Upload(c *gin.Context) {
 		return
 	}
 
+	var in models.CreateGarantiaInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	datos, err := models.ValidarDatosGarantia(in.Subtipo, in.Datos)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+		return
+	}
+	moneda := in.Moneda
+	if moneda == "" {
+		moneda = "BOB"
+	}
+
+	g, err := h.repo.Insert(ctxOf(c), models.Garantia{
+		PrestamoID:       prestamoID,
+		Subtipo:          in.Subtipo,
+		Descripcion:      in.Descripcion,
+		ValorEstimado:    in.ValorEstimado,
+		Moneda:           moneda,
+		ClienteGaranteID: in.ClienteGaranteID,
+		Datos:            datos,
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	g.Imagenes = []models.GarantiaImagen{}
+	c.JSON(http.StatusCreated, g)
+}
+
+func (h *GarantiaHandler) List(c *gin.Context) {
+	prestamoID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id de préstamo inválido"})
+		return
+	}
+	gs, err := h.repo.ListByPrestamo(ctxOf(c), prestamoID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	for i := range gs {
+		imgs, err := h.repo.ListImagenesByGarantia(ctxOf(c), gs[i].ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		gs[i].Imagenes = imgs
+	}
+	c.JSON(http.StatusOK, gin.H{"total": len(gs), "items": gs})
+}
+
+func (h *GarantiaHandler) Get(c *gin.Context) {
+	prestamoID, gid, ok := h.parseIDs(c)
+	if !ok {
+		return
+	}
+	g, valid := h.loadGarantia(c, gid, prestamoID)
+	if !valid {
+		return
+	}
+	imgs, e := h.repo.ListImagenesByGarantia(ctxOf(c), gid)
+	if e != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": e.Error()})
+		return
+	}
+	g.Imagenes = imgs
+	c.JSON(http.StatusOK, g)
+}
+
+func (h *GarantiaHandler) Delete(c *gin.Context) {
+	prestamoID, gid, ok := h.parseIDs(c)
+	if !ok {
+		return
+	}
+	if _, valid := h.loadGarantia(c, gid, prestamoID); !valid {
+		return
+	}
+	// Borra archivos antes de eliminar el registro (cascade elimina filas).
+	imgs, _ := h.repo.ListImagenesByGarantia(ctxOf(c), gid)
+	if err := h.repo.Delete(ctxOf(c), gid); err != nil {
+		h.respondErr(c, err)
+		return
+	}
+	for _, m := range imgs {
+		_ = os.Remove(m.Ruta)
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": gid})
+}
+
+func (h *GarantiaHandler) UploadImagen(c *gin.Context) {
+	prestamoID, gid, ok := h.parseIDs(c)
+	if !ok {
+		return
+	}
+	if _, valid := h.loadGarantia(c, gid, prestamoID); !valid {
+		return
+	}
+
 	fileHeader, err := c.FormFile("imagen")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "se requiere el archivo 'imagen'"})
@@ -70,7 +173,6 @@ func (h *GarantiaHandler) Upload(c *gin.Context) {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "la imagen excede el máximo de 5 MB"})
 		return
 	}
-
 	src, err := fileHeader.Open()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo leer el archivo"})
@@ -78,12 +180,11 @@ func (h *GarantiaHandler) Upload(c *gin.Context) {
 	}
 	defer src.Close()
 
-	// Detecta el tipo por CONTENIDO (no por el header del cliente, manipulable).
 	head := make([]byte, 512)
 	n, _ := io.ReadFull(src, head)
 	mime := http.DetectContentType(head[:n])
-	ext, ok := allowedMimes[mime]
-	if !ok {
+	ext, allowed := allowedMimes[mime]
+	if !allowed {
 		c.JSON(http.StatusUnsupportedMediaType, gin.H{"error": "tipo no permitido; solo JPG, PNG o WEBP"})
 		return
 	}
@@ -92,8 +193,7 @@ func (h *GarantiaHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	// Guarda en <store>/<prestamo_id>/<uuid>.<ext>.
-	dir := filepath.Join(h.storePath, prestamoID.String())
+	dir := filepath.Join(h.storePath, gid.String())
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo preparar el almacenamiento"})
 		return
@@ -121,8 +221,8 @@ func (h *GarantiaHandler) Upload(c *gin.Context) {
 		subidoPor = &claims.UserID
 	}
 
-	g, err := h.repo.Insert(ctxOf(c), models.Garantia{
-		PrestamoID:    prestamoID,
+	m, err := h.repo.InsertImagen(ctxOf(c), models.GarantiaImagen{
+		GarantiaID:    gid,
 		NombreArchivo: fileHeader.Filename,
 		Ruta:          ruta,
 		Mime:          mime,
@@ -135,80 +235,97 @@ func (h *GarantiaHandler) Upload(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, g)
+	c.JSON(http.StatusCreated, m)
 }
 
-func (h *GarantiaHandler) List(c *gin.Context) {
+func (h *GarantiaHandler) DownloadImagen(c *gin.Context) {
+	_, gid, ok := h.parseIDs(c)
+	if !ok {
+		return
+	}
+	iid, err := uuid.Parse(c.Param("iid"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id de imagen inválido"})
+		return
+	}
+	m, err := h.repo.GetImagen(ctxOf(c), iid)
+	if err != nil {
+		h.respondErr(c, err)
+		return
+	}
+	if m.GarantiaID != gid {
+		c.JSON(http.StatusNotFound, gin.H{"error": "imagen no encontrada"})
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, m.NombreArchivo))
+	c.File(m.Ruta)
+}
+
+func (h *GarantiaHandler) DeleteImagen(c *gin.Context) {
+	_, gid, ok := h.parseIDs(c)
+	if !ok {
+		return
+	}
+	iid, err := uuid.Parse(c.Param("iid"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "id de imagen inválido"})
+		return
+	}
+	m, err := h.repo.GetImagen(ctxOf(c), iid)
+	if err != nil {
+		h.respondErr(c, err)
+		return
+	}
+	if m.GarantiaID != gid {
+		c.JSON(http.StatusNotFound, gin.H{"error": "imagen no encontrada"})
+		return
+	}
+	if _, err := h.repo.DeleteImagen(ctxOf(c), iid); err != nil {
+		h.respondErr(c, err)
+		return
+	}
+	_ = os.Remove(m.Ruta)
+	c.JSON(http.StatusOK, gin.H{"deleted": iid})
+}
+
+// ─── helpers ───
+
+// parseIDs lee :id (préstamo) y :gid (garantía); responde 400 y retorna false
+// si alguno es inválido.
+func (h *GarantiaHandler) parseIDs(c *gin.Context) (uuid.UUID, uuid.UUID, bool) {
 	prestamoID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "id de préstamo inválido"})
-		return
-	}
-	gs, err := h.repo.ListByPrestamo(ctxOf(c), prestamoID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"total": len(gs), "items": gs})
-}
-
-func (h *GarantiaHandler) Download(c *gin.Context) {
-	prestamoID, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id de préstamo inválido"})
-		return
+		return uuid.Nil, uuid.Nil, false
 	}
 	gid, err := uuid.Parse(c.Param("gid"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "id de garantía inválido"})
-		return
+		return uuid.Nil, uuid.Nil, false
 	}
+	return prestamoID, gid, true
+}
+
+// loadGarantia obtiene la garantía y verifica que pertenezca al préstamo.
+// Responde el error apropiado y retorna ok=false si no procede.
+func (h *GarantiaHandler) loadGarantia(c *gin.Context, gid, prestamoID uuid.UUID) (models.Garantia, bool) {
 	g, err := h.repo.Get(ctxOf(c), gid)
 	if err != nil {
-		h.respondGarantiaError(c, err)
-		return
+		h.respondErr(c, err)
+		return models.Garantia{}, false
 	}
 	if g.PrestamoID != prestamoID {
 		c.JSON(http.StatusNotFound, gin.H{"error": "garantía no encontrada"})
-		return
+		return models.Garantia{}, false
 	}
-	c.Header("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, g.NombreArchivo))
-	c.File(g.Ruta)
+	return g, true
 }
 
-func (h *GarantiaHandler) Delete(c *gin.Context) {
-	prestamoID, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id de préstamo inválido"})
-		return
-	}
-	gid, err := uuid.Parse(c.Param("gid"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "id de garantía inválido"})
-		return
-	}
-	// Verifica pertenencia antes de borrar.
-	g, err := h.repo.Get(ctxOf(c), gid)
-	if err != nil {
-		h.respondGarantiaError(c, err)
-		return
-	}
-	if g.PrestamoID != prestamoID {
-		c.JSON(http.StatusNotFound, gin.H{"error": "garantía no encontrada"})
-		return
-	}
-	if _, err := h.repo.Delete(ctxOf(c), gid); err != nil {
-		h.respondGarantiaError(c, err)
-		return
-	}
-	_ = os.Remove(g.Ruta) // best-effort: el registro ya no existe
-	c.JSON(http.StatusOK, gin.H{"deleted": gid})
-}
-
-func (h *GarantiaHandler) respondGarantiaError(c *gin.Context, err error) {
-	if errors.Is(err, repository.ErrGarantiaNotFound) {
+func (h *GarantiaHandler) respondErr(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, repository.ErrGarantiaNotFound), errors.Is(err, repository.ErrImagenNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 	}
-	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 }

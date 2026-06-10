@@ -47,7 +47,6 @@ type Prestamo struct {
 	Estado          Estado      `json:"estado"`
 	AprobadoPor     *uuid.UUID  `json:"aprobado_por,omitempty"`
 	Observaciones   *string     `json:"observaciones,omitempty"`
-	TipoGarantia    *string     `json:"tipo_garantia,omitempty"`
 	CreatedAt       time.Time   `json:"created_at"`
 	UpdatedAt       time.Time   `json:"updated_at"`
 }
@@ -61,7 +60,6 @@ type CreatePrestamoInput struct {
 	NumCuotas       int          `json:"num_cuotas"       binding:"required,gt=0,lte=600"`
 	Frecuencia      Frecuencia   `json:"frecuencia"       binding:"required,oneof=diaria semanal quincenal mensual"`
 	Observaciones   *string      `json:"observaciones"`
-	TipoGarantia    *string      `json:"tipo_garantia"    binding:"omitempty,oneof=garante prendaria hipotecaria"`
 }
 
 // ApprovePrestamoInput aprueba y desembolsa; genera el plan de pagos.
