@@ -727,3 +727,20 @@ observabilidad de salud de los contenedores.
 - Impacto en pagos: el `frontend` sirve sobre HTTPS, lo que habilita
   `crypto.randomUUID` (contexto seguro) para la idempotency key, con fallback
   en `prestamo-detail` por si se accede vía HTTP interno.
+
+## 12.3 Healthchecks de contenedores
+
+- **Cobertura completa del stack**: `frontend`, los **5 microservicios Go**,
+  `consul`, `kafka`, `redis`, `prometheus`, `grafana`, más los ya existentes
+  `postgres` y `rabbitmq`.
+- Los servicios Go corren sobre imágenes **distroless** (sin shell ni curl), así
+  que el healthcheck invoca el propio binario en modo `-healthcheck`, que
+  consulta `/health` local y sale con código 0/1.
+- **Excepción — Keycloak**: su imagen (ubi-micro) no trae shell ni cliente HTTP
+  y un check fiable es complejo; se omite el healthcheck de contenedor. La
+  readiness queda cubierta de forma implícita: los servicios Go con
+  `AUTH_ENABLED=true` hacen *fail-fast* (OIDC discovery) y reinician si Keycloak
+  no responde.
+- Las condiciones `depends_on` se mantienen como estaban (salvo `postgres` y
+  `rabbitmq` que ya usaban `service_healthy`); endurecerlas a `service_healthy`
+  para el resto es una mejora opcional posterior.

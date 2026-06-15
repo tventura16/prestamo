@@ -97,6 +97,12 @@ services:
       dockerfile: Dockerfile
     container_name: prestamos-client-service
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/app/client-service", "-healthcheck"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
     environment:
       SERVICE_NAME: client-service
       SERVICE_PORT: 8081
@@ -136,6 +142,12 @@ services:
       dockerfile: Dockerfile
     container_name: prestamos-loan-service
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/app/loan-service", "-healthcheck"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
     environment:
       SERVICE_NAME: loan-service
       SERVICE_HOST: prestamos-loan-service
@@ -176,6 +188,12 @@ services:
       dockerfile: Dockerfile
     container_name: prestamos-payment-service
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/app/payment-service", "-healthcheck"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
     environment:
       SERVICE_NAME: payment-service
       SERVICE_HOST: prestamos-payment-service
@@ -217,6 +235,12 @@ services:
       dockerfile: Dockerfile
     container_name: prestamos-report-service
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/app/report-service", "-healthcheck"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
     environment:
       SERVICE_NAME: report-service
       SERVICE_HOST: prestamos-report-service
@@ -254,6 +278,12 @@ services:
       dockerfile: Dockerfile
     container_name: prestamos-document-service
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/app/document-service", "-healthcheck"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
     environment:
       SERVICE_NAME: document-service
       SERVICE_HOST: prestamos-document-service
@@ -294,6 +324,11 @@ services:
     container_name: prestamos-consul
     restart: unless-stopped
     command: agent -server -bootstrap -ui -client=0.0.0.0
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     ports:
       - "8500:8500"
     volumes:
@@ -308,6 +343,12 @@ services:
     image: apache/kafka:4.0.0
     container_name: prestamos-kafka
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -377,6 +418,11 @@ services:
     container_name: prestamos-redis
     restart: unless-stopped
     command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     ports:
       - "6379:6379"
     volumes:
@@ -391,6 +437,11 @@ services:
     image: prom/prometheus:v3.0.0
     container_name: prestamos-prometheus
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     ports:
       - "9090:9090"
     volumes:
@@ -404,6 +455,11 @@ services:
     image: grafana/grafana:12.0.0
     container_name: prestamos-grafana
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?GRAFANA_PASSWORD no definido (ver .env.example)}
