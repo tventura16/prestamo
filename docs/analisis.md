@@ -714,3 +714,16 @@ observabilidad de salud de los contenedores.
 - **Pendiente (evolución):** migrar a **Vault** para gestión centralizada y
   rotación de secretos (registrar como ADR). El esquema actual es suficiente
   para un despliegue Docker Compose con secretos fuera del repositorio.
+
+## 12.2 Cifrado en tránsito (TLS)
+
+- El frontend (nginx) **termina TLS en el puerto 443** (TLS 1.2/1.3, HTTP/2,
+  HSTS) y **redirige 80 → 443** (301); `/health` se mantiene en HTTP para el
+  healthcheck de Docker.
+- Los certificados se montan desde el host (`./certs:/etc/nginx/certs:ro`).
+  `scripts/gen-certs.sh` emite un certificado **autofirmado** para
+  desarrollo/staging; en **producción** se montan certificados de una CA real
+  (Let's Encrypt / corporativa) en el mismo path.
+- Impacto en pagos: el `frontend` sirve sobre HTTPS, lo que habilita
+  `crypto.randomUUID` (contexto seguro) para la idempotency key, con fallback
+  en `prestamo-detail` por si se accede vía HTTP interno.

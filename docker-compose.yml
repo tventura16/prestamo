@@ -15,8 +15,17 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    volumes:
+      # Certificados TLS provistos por el host (ver scripts/gen-certs.sh).
+      - ./certs:/etc/nginx/certs:ro
     networks:
       - frontend-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     depends_on:
       - api-gateway
 
