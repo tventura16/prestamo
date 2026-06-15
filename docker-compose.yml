@@ -57,7 +57,7 @@ services:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
       KC_DB_USERNAME: ${DB_USER:-prestamos}
-      KC_DB_PASSWORD: ${DB_PASSWORD:-prestamos}
+      KC_DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD no definido (ver .env.example / scripts/gen-secrets.sh)}
       KC_METRICS_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
       KC_HOSTNAME: localhost
@@ -65,7 +65,7 @@ services:
       KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
       KC_HTTP_ENABLED: "true"
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD no definido (ver .env.example)}
     ports:
       - "8080:8080"
     volumes:
@@ -97,7 +97,7 @@ services:
       DB_PORT: 5432
       DB_NAME: clientes
       DB_USER: ${DB_USER:-prestamos}
-      DB_PASSWORD: ${DB_PASSWORD:-prestamos}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD no definido (ver .env.example / scripts/gen-secrets.sh)}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       KAFKA_BROKERS: kafka:9092
@@ -136,7 +136,7 @@ services:
       DB_PORT: 5432
       DB_NAME: prestamos
       DB_USER: ${DB_USER:-prestamos}
-      DB_PASSWORD: ${DB_PASSWORD:-prestamos}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD no definido (ver .env.example / scripts/gen-secrets.sh)}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       KAFKA_BROKERS: kafka:9092
@@ -177,11 +177,11 @@ services:
       DB_NAME: pagos
       DB_NAME_PRESTAMOS: prestamos
       DB_USER: ${DB_USER:-prestamos}
-      DB_PASSWORD: ${DB_PASSWORD:-prestamos}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD no definido (ver .env.example / scripts/gen-secrets.sh)}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       KAFKA_BROKERS: kafka:9092
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-prestamos}:${RABBITMQ_PASSWORD:-prestamos}@rabbitmq:5672/
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-prestamos}:${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD no definido (ver .env.example)}@rabbitmq:5672/
       CONSUL_HOST: consul
       CONSUL_PORT: 8500
       KEYCLOAK_URL: http://auth-service:8080
@@ -219,7 +219,7 @@ services:
       DB_NAME_PRESTAMOS: prestamos
       DB_NAME_CLIENTES: clientes
       DB_USER: ${DB_USER:-prestamos}
-      DB_PASSWORD: ${DB_PASSWORD:-prestamos}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD no definido (ver .env.example / scripts/gen-secrets.sh)}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       KAFKA_BROKERS: kafka:9092
@@ -257,7 +257,7 @@ services:
       DB_NAME_PRESTAMOS: prestamos
       DB_NAME_PAGOS: pagos
       DB_USER: ${DB_USER:-prestamos}
-      DB_PASSWORD: ${DB_PASSWORD:-prestamos}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD no definido (ver .env.example / scripts/gen-secrets.sh)}
       KAFKA_BROKERS: kafka:9092
       CONSUL_HOST: consul
       CONSUL_PORT: 8500
@@ -323,7 +323,7 @@ services:
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-prestamos}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-prestamos}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD no definido (ver .env.example)}
       RABBITMQ_PLUGINS: "rabbitmq_management rabbitmq_prometheus"
     ports:
       - "5672:5672"
@@ -348,7 +348,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USER:-prestamos}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-prestamos}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD no definido (ver .env.example / scripts/gen-secrets.sh)}
       POSTGRES_DB: prestamos
     ports:
       - "5432:5432"
@@ -397,7 +397,7 @@ services:
     restart: unless-stopped
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?GRAFANA_PASSWORD no definido (ver .env.example)}
     ports:
       - "3000:3000"
     volumes:

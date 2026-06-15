@@ -693,3 +693,24 @@ ubicación técnica principal.
 
 - Las decisiones se registran en `docs/adr/`. **ADR-0001: Kong Gateway OSS**
   (Apache 2.0) como API Gateway — no requiere licencia en producción.
+
+---
+
+# 12. Endurecimiento para Producción
+
+Medidas aplicadas para llevar el stack de "funcional en desarrollo" a
+"desplegable en producción". Cubren gestión de secretos, cifrado en tránsito y
+observabilidad de salud de los contenedores.
+
+## 12.1 Gestión de secretos
+
+- El archivo `.env` **ya no se versiona** (removido del índice; `.gitignore`
+  ignora `.env`, `*.env` salvo `.env.example`, y `certs/` + material de clave).
+- `.env.example` es la **plantilla** (sin valores por defecto débiles); el `.env`
+  real se genera con `scripts/gen-secrets.sh` (`openssl rand`, `chmod 600`).
+- `docker-compose.yml` usa la forma **fail-fast** `${VAR:?mensaje}` para todas
+  las contraseñas (DB, Keycloak, RabbitMQ, Grafana): **el stack aborta el
+  arranque si falta un secreto**, eliminando los antiguos defaults inseguros.
+- **Pendiente (evolución):** migrar a **Vault** para gestión centralizada y
+  rotación de secretos (registrar como ADR). El esquema actual es suficiente
+  para un despliegue Docker Compose con secretos fuera del repositorio.
