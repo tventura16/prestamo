@@ -1,2 +1,13 @@
 # Artefactos de pruebas con Playwright (capturas, snapshots, descargas)
 .playwright-mcp/
+
+# Secretos: el .env real NUNCA se versiona (usar .env.example como plantilla)
+.env
+*.env
+!.env.example
+
+# Certificados TLS (generados localmente o provistos por el entorno)
+certs/
+*.pem
+*.key
+*.crt

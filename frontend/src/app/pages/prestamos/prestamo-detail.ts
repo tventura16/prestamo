@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal, computed } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, signal, computed } from '@angular/core';
 import { CommonModule, CurrencyPipe } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -7,6 +7,25 @@ import { LoanService, Prestamo, Cuota, Garantia, SubtipoGarantia } from '../../c
 import { PaymentService, MetodoPago } from '../../core/services/payment.service';
 import { DocumentService } from '../../core/services/document.service';
 import { KeycloakService } from '../../core/keycloak.service';
+
+// Genera un UUID v4 para la idempotency key del pago. `crypto.randomUUID` solo
+// existe en contextos seguros (HTTPS/localhost); detrás de un proxy HTTP plano
+// (Docker Compose) sería undefined y rompería el pago, por eso el fallback.
+function newUuid(): string {
+  const c = globalThis.crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  // Fallback v4 con getRandomValues; último recurso con Math.random.
+  const bytes = new Uint8Array(16);
+  if (c?.getRandomValues) {
+    c.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // versión 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variante
+  const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0'));
+  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
+}
 
 @Component({
   selector: 'app-prestamo-detail',
@@ -146,7 +165,11 @@ import { KeycloakService } from '../../core/keycloak.service';
           </div>
         }
 
-        @if (garantias().length === 0 && !mostrarNueva()) {
+        @if (garantiasLoading()) {
+          <p class="text-sm text-muted">Cargando garantías...</p>
+        } @else if (garantiasError(); as ge) {
+          <p class="rounded-md bg-red-50 p-3 text-sm text-red-600">{{ ge }}</p>
+        } @else if (garantias().length === 0 && !mostrarNueva()) {
           <p class="text-sm text-muted">Sin garantías registradas.</p>
         }
 
@@ -302,7 +325,7 @@ import { KeycloakService } from '../../core/keycloak.service';
     }
   `,
 })
-export class PrestamoDetail implements OnInit {
+export class PrestamoDetail implements OnInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private loanSvc = inject(LoanService);
   private paySvc = inject(PaymentService);
@@ -342,6 +365,8 @@ export class PrestamoDetail implements OnInit {
 
   // ─── Garantías ───
   garantias = signal<Garantia[]>([]);
+  garantiasLoading = signal(true);
+  garantiasError = signal<string | null>(null);
   thumbs = signal<Record<string, string>>({}); // imagen.id -> object URL
   // Subir/editar garantías: cajero/admin (igual que el backend).
   puedeEditar = computed(() =>
@@ -428,13 +453,23 @@ export class PrestamoDetail implements OnInit {
     this.loadGarantias();
   }
 
+  ngOnDestroy() {
+    // Libera los object URLs (miniaturas + PDF) para evitar fugas de memoria.
+    Object.values(this.thumbs()).forEach(u => URL.revokeObjectURL(u));
+    const pdf = this.pdfUrl();
+    if (pdf) URL.revokeObjectURL(pdf);
+  }
+
   // ─── Garantías ───
   loadGarantias() {
     const id = this.route.snapshot.paramMap.get('id');
     if (!id) return;
+    this.garantiasLoading.set(true);
+    this.garantiasError.set(null);
     this.loanSvc.listGarantias(id).subscribe({
       next: r => {
         this.garantias.set(r.items);
+        this.garantiasLoading.set(false);
         // Revoca miniaturas anteriores y descarga las imágenes (autenticado → blob).
         Object.values(this.thumbs()).forEach(u => URL.revokeObjectURL(u));
         this.thumbs.set({});
@@ -442,9 +477,14 @@ export class PrestamoDetail implements OnInit {
           for (const img of g.imagenes ?? []) {
             this.loanSvc.downloadImagen(id, g.id, img.id).subscribe({
               next: blob => this.thumbs.update(t => ({ ...t, [img.id]: URL.createObjectURL(blob) })),
+              error: () => {}, // miniatura fallida: la <img> queda vacía, no rompe la vista
             });
           }
         }
+      },
+      error: e => {
+        this.garantiasError.set(e.error?.error || e.message);
+        this.garantiasLoading.set(false);
       },
     });
   }
@@ -598,7 +638,7 @@ export class PrestamoDetail implements OnInit {
     this.payCuota.set(c);
     this.payError.set(null);
     // Una clave por intento de pago: reintentos reusan la misma → sin doble cobro.
-    this.payKey = crypto.randomUUID();
+    this.payKey = newUuid();
     this.payForm = {
       monto_pagado: c.saldo_pendiente + c.mora_acumulada,
       metodo_pago: 'efectivo',

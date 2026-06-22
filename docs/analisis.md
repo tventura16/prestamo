@@ -693,3 +693,54 @@ ubicación técnica principal.
 
 - Las decisiones se registran en `docs/adr/`. **ADR-0001: Kong Gateway OSS**
   (Apache 2.0) como API Gateway — no requiere licencia en producción.
+
+---
+
+# 12. Endurecimiento para Producción
+
+Medidas aplicadas para llevar el stack de "funcional en desarrollo" a
+"desplegable en producción". Cubren gestión de secretos, cifrado en tránsito y
+observabilidad de salud de los contenedores.
+
+## 12.1 Gestión de secretos
+
+- El archivo `.env` **ya no se versiona** (removido del índice; `.gitignore`
+  ignora `.env`, `*.env` salvo `.env.example`, y `certs/` + material de clave).
+- `.env.example` es la **plantilla** (sin valores por defecto débiles); el `.env`
+  real se genera con `scripts/gen-secrets.sh` (`openssl rand`, `chmod 600`).
+- `docker-compose.yml` usa la forma **fail-fast** `${VAR:?mensaje}` para todas
+  las contraseñas (DB, Keycloak, RabbitMQ, Grafana): **el stack aborta el
+  arranque si falta un secreto**, eliminando los antiguos defaults inseguros.
+- **Pendiente (evolución):** migrar a **Vault** para gestión centralizada y
+  rotación de secretos (registrar como ADR). El esquema actual es suficiente
+  para un despliegue Docker Compose con secretos fuera del repositorio.
+
+## 12.2 Cifrado en tránsito (TLS)
+
+- El frontend (nginx) **termina TLS en el puerto 443** (TLS 1.2/1.3, HTTP/2,
+  HSTS) y **redirige 80 → 443** (301); `/health` se mantiene en HTTP para el
+  healthcheck de Docker.
+- Los certificados se montan desde el host (`./certs:/etc/nginx/certs:ro`).
+  `scripts/gen-certs.sh` emite un certificado **autofirmado** para
+  desarrollo/staging; en **producción** se montan certificados de una CA real
+  (Let's Encrypt / corporativa) en el mismo path.
+- Impacto en pagos: el `frontend` sirve sobre HTTPS, lo que habilita
+  `crypto.randomUUID` (contexto seguro) para la idempotency key, con fallback
+  en `prestamo-detail` por si se accede vía HTTP interno.
+
+## 12.3 Healthchecks de contenedores
+
+- **Cobertura completa del stack**: `frontend`, los **5 microservicios Go**,
+  `consul`, `kafka`, `redis`, `prometheus`, `grafana`, más los ya existentes
+  `postgres` y `rabbitmq`.
+- Los servicios Go corren sobre imágenes **distroless** (sin shell ni curl), así
+  que el healthcheck invoca el propio binario en modo `-healthcheck`, que
+  consulta `/health` local y sale con código 0/1.
+- **Excepción — Keycloak**: su imagen (ubi-micro) no trae shell ni cliente HTTP
+  y un check fiable es complejo; se omite el healthcheck de contenedor. La
+  readiness queda cubierta de forma implícita: los servicios Go con
+  `AUTH_ENABLED=true` hacen *fail-fast* (OIDC discovery) y reinician si Keycloak
+  no responde.
+- Las condiciones `depends_on` se mantienen como estaban (salvo `postgres` y
+  `rabbitmq` que ya usaban `service_healthy`); endurecerlas a `service_healthy`
+  para el resto es una mejora opcional posterior.

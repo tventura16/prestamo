@@ -204,11 +204,18 @@ func (h *GarantiaHandler) UploadImagen(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo guardar la imagen"})
 		return
 	}
-	written, copyErr := io.Copy(dst, src)
+	// Acota la escritura al máximo permitido: fileHeader.Size es el tamaño
+	// declarado por el cliente y puede mentir; LimitReader corta de verdad.
+	written, copyErr := io.Copy(dst, io.LimitReader(src, maxGarantiaBytes+1))
 	closeErr := dst.Close()
 	if copyErr != nil || closeErr != nil {
 		_ = os.Remove(ruta)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "no se pudo escribir la imagen"})
+		return
+	}
+	if written > maxGarantiaBytes {
+		_ = os.Remove(ruta)
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "la imagen excede el máximo de 5 MB"})
 		return
 	}
 

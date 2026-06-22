@@ -27,6 +27,12 @@ import (
 )
 
 func main() {
+	// Modo healthcheck para Docker: la imagen es distroless (sin shell ni curl),
+	// así que `<binario> -healthcheck` consulta /health y sale 0/1.
+	if len(os.Args) > 1 && os.Args[1] == "-healthcheck" {
+		healthcheck()
+	}
+
 	cfg := config.Load()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
@@ -184,6 +190,21 @@ func main() {
 		logger.Error("forced shutdown", "err", err)
 	}
 	logger.Info("server stopped")
+}
+
+// healthcheck consulta el endpoint /health local y termina el proceso con
+// código 0 (sano) o 1 (caído). Lo invoca el HEALTHCHECK de Docker.
+func healthcheck() {
+	port := os.Getenv("SERVICE_PORT")
+	if port == "" {
+		port = "8083"
+	}
+	client := http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:" + port + "/health")
+	if err != nil || resp.StatusCode != http.StatusOK {
+		os.Exit(1)
+	}
+	os.Exit(0)
 }
 
 func parseLogLevel(s string) slog.Level {
